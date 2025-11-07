@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -34,24 +34,24 @@ export async function middleware(request: NextRequest) {
   // Refresh session if expired - required for Server Components
   const { data: { user } } = await supabase.auth.getUser()
 
-  console.log("[Middleware] Path:", request.nextUrl.pathname);
-  console.log("[Middleware] User:", user?.id);
+  console.log("[Proxy] Path:", request.nextUrl.pathname);
+  console.log("[Proxy] User:", user?.id);
 
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/auth']
   const isPublicRoute = publicRoutes.some(route => request.nextUrl.pathname.startsWith(route))
 
-  console.log("[Middleware] Is public route:", isPublicRoute);
+  console.log("[Proxy] Is public route:", isPublicRoute);
 
   // If not authenticated and trying to access protected route, redirect to login
   if (!user && !isPublicRoute && request.nextUrl.pathname !== '/') {
-    console.log("[Middleware] Not authenticated, redirecting to login");
+    console.log("[Proxy] Not authenticated, redirecting to login");
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
   // If authenticated, check if user needs onboarding
   if (user && !isPublicRoute && request.nextUrl.pathname !== '/onboarding') {
-    console.log("[Middleware] Checking if user needs onboarding");
+    console.log("[Proxy] Checking if user needs onboarding");
     
     // Check if user has any companies
     const { data: memberships, error } = await supabase
@@ -60,19 +60,19 @@ export async function middleware(request: NextRequest) {
       .eq('user_id', user.id)
       .limit(1)
 
-    console.log("[Middleware] Memberships query:", { memberships, error });
-    console.log("[Middleware] Has memberships:", memberships && memberships.length > 0);
+    console.log("[Proxy] Memberships query:", { memberships, error });
+    console.log("[Proxy] Has memberships:", memberships && memberships.length > 0);
 
     // If no companies, redirect to onboarding (unless already on root or discover)
     if (!memberships || memberships.length === 0) {
       if (request.nextUrl.pathname !== '/' && !request.nextUrl.pathname.startsWith('/discover')) {
-        console.log("[Middleware] No memberships, redirecting to onboarding");
+        console.log("[Proxy] No memberships, redirecting to onboarding");
         return NextResponse.redirect(new URL('/onboarding', request.url))
       }
     }
   }
 
-  console.log("[Middleware] Proceeding to requested page");
+  console.log("[Proxy] Proceeding to requested page");
 
   return response
 }
