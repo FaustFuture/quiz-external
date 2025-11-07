@@ -1,6 +1,6 @@
 "use server"
 
-import { supabase } from "@/lib/supabase"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { revalidatePath } from "next/cache"
 
 export type Module = {
@@ -8,7 +8,7 @@ export type Module = {
   company_id: string
   title: string
   description: string | null
-  order: number
+  order?: number // Optional since column may not exist in DB yet
   created_at: string
   type: 'module' | 'exam'
   is_unlocked: boolean
@@ -16,25 +16,14 @@ export type Module = {
 
 export async function createModule(companyId: string, title: string, description: string, type: 'module' | 'exam' = 'module') {
   try {
-    // Get the highest order number for this company
-    const { data: existingModules } = await supabase
-      .from("modules")
-      .select("order")
-      .eq("company_id", companyId)
-      .order("order", { ascending: false })
-      .limit(1)
-
-    const nextOrder = existingModules && existingModules.length > 0 
-      ? existingModules[0].order + 1 
-      : 0
-
+    const supabase = await createServerSupabaseClient()
+    
     const { data, error } = await supabase
       .from("modules")
       .insert({
         company_id: companyId,
         title,
         description,
-        order: nextOrder,
         type,
         is_unlocked: type === 'module' ? true : false, // Modules are always unlocked, exams start locked
       })
@@ -56,6 +45,8 @@ export async function createModule(companyId: string, title: string, description
 
 export async function getModules(companyId: string): Promise<Module[]> {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { data, error } = await supabase
       .from("modules")
       .select("*")
@@ -76,6 +67,8 @@ export async function getModules(companyId: string): Promise<Module[]> {
 
 export async function updateModuleOrder(moduleId: string, newOrder: number, companyId: string) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     // Get all modules for this company
     const { data: allModules, error: fetchError } = await supabase
       .from("modules")
@@ -93,7 +86,7 @@ export async function updateModuleOrder(moduleId: string, newOrder: number, comp
     }
 
     // Find the module being moved
-    const oldIndex = allModules.findIndex(m => m.id === moduleId)
+    const oldIndex = allModules.findIndex((m: any) => m.id === moduleId)
     if (oldIndex === -1) {
       return { success: false, error: "Module not found" }
     }
@@ -142,6 +135,8 @@ export async function updateModuleOrder(moduleId: string, newOrder: number, comp
 
 export async function deleteModule(moduleId: string, companyId: string) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { error } = await supabase
       .from("modules")
       .delete()
@@ -163,6 +158,8 @@ export async function deleteModule(moduleId: string, companyId: string) {
 
 export async function unlockExam(moduleId: string, companyId: string) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { error } = await supabase
       .from("modules")
       .update({ is_unlocked: true })
@@ -185,6 +182,8 @@ export async function unlockExam(moduleId: string, companyId: string) {
 
 export async function lockExam(moduleId: string, companyId: string) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { error } = await supabase
       .from("modules")
       .update({ is_unlocked: false })

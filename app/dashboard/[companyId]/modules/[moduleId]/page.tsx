@@ -1,5 +1,4 @@
-import { headers } from "next/headers"
-import { whopsdk } from "@/lib/whop-sdk"
+import { requireAuth } from "@/lib/supabase-server"
 import { DashboardNavbar } from "@/components/dashboard-navbar"
 import { getModules } from "@/app/actions/modules"
 import { getExercises } from "@/app/actions/exercises"
@@ -22,12 +21,12 @@ interface ModulePageProps {
 export default async function ModulePage({ params }: ModulePageProps) {
 	const { companyId, moduleId } = await params
 
-	// Ensure the user is logged in on whop
-	const { userId } = await whopsdk.verifyUserToken(await headers())
+	// Ensure the user is logged in with Supabase
+	const user = await requireAuth()
+	const userId = user.id
 
 	// Fetch the company data, module, and exercises
-	const [company, modules, exercises, companyRecord] = await Promise.all([
-		whopsdk.companies.retrieve(companyId),
+	const [modules, exercises, companyRecord] = await Promise.all([
 		getModules(companyId),
 		getExercises(moduleId),
 		getCompany(companyId),
@@ -42,8 +41,8 @@ export default async function ModulePage({ params }: ModulePageProps) {
 	// Fetch alternatives for the first exercise (if any)
 	const alternatives = exercises.length > 0 ? await getAlternatives(exercises[0].id) : []
 
-	// Get company name, fallback to ID if name is not available
-	const companyName = (company as any).name || (company as any).title || companyId
+	// Get company name from database
+	const companyName = companyRecord?.name || companyId
 
 	return (
 		<div className="min-h-screen bg-background">

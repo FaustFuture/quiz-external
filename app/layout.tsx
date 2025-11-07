@@ -1,4 +1,3 @@
-import { WhopApp } from "@whop/react/components";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -15,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-	title: "Whop App",
-	description: "My Whop App",
+	title: "Quiz Platform",
+	description: "Interactive Quiz & Learning Platform",
 };
 
 export default function RootLayout({
@@ -30,7 +29,7 @@ export default function RootLayout({
 				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
 			>
 				<ThemeProvider defaultTheme="dark" storageKey="quiz-theme">
-					<WhopApp>{children}</WhopApp>
+					{children}
 				</ThemeProvider>
 			</body>
 		</html>

@@ -11,7 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { grantExamRetakeByUsernames, searchCachedUsers, listExamRetakes } from "@/app/actions/users"
+import { grantExamRetakeByEmails, searchCachedUsers, listExamRetakes } from "@/app/actions/users"
 import { useRouter } from "next/navigation"
 import { Users } from "lucide-react"
 
@@ -66,12 +66,12 @@ export function GrantRetakeDialog({ moduleId, companyId }: GrantRetakeDialogProp
   }, [open, moduleId])
 
   const handleGrant = async () => {
-    const usernames = selected.length > 0 ? selected : parseUsernames(input)
-    if (usernames.length === 0) return
+    const emails = selected.length > 0 ? selected : parseUsernames(input)
+    if (emails.length === 0) return
     setIsLoading(true)
     try {
       // Admin user id will be resolved in server using whop sdk from headers if needed; for now pass placeholder
-      const res = await grantExamRetakeByUsernames(moduleId, usernames, "admin")
+      const res = await grantExamRetakeByEmails(moduleId, emails, "admin")
       if (!res.success) {
         alert(res.error || "Failed to grant retake")
         setIsLoading(false)
@@ -115,7 +115,7 @@ export function GrantRetakeDialog({ moduleId, companyId }: GrantRetakeDialogProp
       <DialogContent className="max-w-lg [&>button]:text-foreground [&>button]:opacity-100 [&>button]:hover:opacity-100">
         <DialogHeader>
           <DialogTitle className="text-foreground">Grant Retake</DialogTitle>
-          <DialogDescription className="text-foreground">Enter usernames separated by commas, spaces, or new lines.</DialogDescription>
+          <DialogDescription className="text-foreground">Enter email addresses separated by commas, spaces, or new lines.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="relative">

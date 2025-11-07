@@ -1,6 +1,7 @@
 "use server"
 
-import { supabase, supabaseAdmin } from "@/lib/supabase"
+import { supabaseAdmin } from "@/lib/supabase"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { revalidatePath } from "next/cache"
 
 export type Exercise = {
@@ -10,8 +11,8 @@ export type Exercise = {
   image_url: string | null
   image_urls?: string[] | null
   video_url?: string | null
-  image_display_size: string
-  image_layout: 'grid' | 'carousel' | 'vertical' | 'horizontal'
+  image_display_size?: string
+  image_layout?: 'grid' | 'carousel' | 'vertical' | 'horizontal'
   weight: number
   order: number
   created_at: string
@@ -24,6 +25,8 @@ export async function createExercise(
   weight: number = 1
 ) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     // Get the highest order number for this module
     const { data: existingExercises } = await supabase
       .from("exercises")
@@ -36,18 +39,23 @@ export async function createExercise(
       ? existingExercises[0].order + 1 
       : 0
 
+    // Create exercise with only required fields
+    // Optional fields like image_layout will be added by migration
+    const insertData: any = {
+      module_id: moduleId,
+      question,
+      weight,
+      order: nextOrder,
+    }
+    
+    // Only add optional fields if they exist in the schema
+    if (imageUrl) {
+      insertData.image_url = imageUrl
+    }
+
     const { data, error } = await supabase
       .from("exercises")
-      .insert({
-        module_id: moduleId,
-        question,
-        image_url: imageUrl || null,
-        image_urls: null,
-        video_url: null,
-        image_layout: 'grid',
-        weight,
-        order: nextOrder,
-      })
+      .insert(insertData)
       .select()
       .single()
 
@@ -66,6 +74,8 @@ export async function createExercise(
 
 export async function getExercises(moduleId: string): Promise<Exercise[]> {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { data, error } = await supabase
       .from("exercises")
       .select("*")
@@ -90,6 +100,8 @@ export async function updateExerciseOrder(
   moduleId: string
 ) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { error } = await supabase
       .from("exercises")
       .update({ order: newOrder })
@@ -115,6 +127,8 @@ export async function updateExercise(
   updates: { question?: string; image_url?: string; image_urls?: string[] | null; video_url?: string; image_layout?: string }
 ) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { data, error } = await supabase
       .from("exercises")
       .update(updates)
@@ -142,6 +156,8 @@ export async function updateExerciseImageDisplaySize(
   imageDisplaySize: string
 ) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { error } = await supabase
       .from("exercises")
       .update({ image_display_size: imageDisplaySize })
@@ -167,6 +183,8 @@ export async function updateExerciseImageLayout(
   imageLayout: string
 ) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { error } = await supabase
       .from("exercises")
       .update({ image_layout: imageLayout })

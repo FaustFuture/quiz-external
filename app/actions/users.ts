@@ -1,38 +1,39 @@
 "use server"
 
-import { supabase } from "@/lib/supabase"
-import { whopsdk } from "@/lib/whop-sdk"
+import { supabase, supabaseAdmin } from "@/lib/supabase"
 
 export type CachedUser = {
   id: string
-  whop_user_id: string
+  auth_user_id: string
   name: string | null
-  username: string | null
   email: string | null
   avatar_url: string | null
   created_at: string
 }
 
-export async function upsertUsersFromWhop(userIds: string[]) {
+// No longer needed - Supabase auth handles users automatically
+export async function upsertUsersFromSupabase(userIds: string[]) {
   if (!Array.isArray(userIds) || userIds.length === 0) return { success: true }
   const unique = Array.from(new Set(userIds))
   const users: any[] = []
+  
+  // Fetch user data from Supabase auth
   for (const id of unique) {
     try {
-      const u = await whopsdk.users.retrieve(id)
-      users.push({
-        whop_user_id: id,
-        name: (u as any).name || null,
-        username: (u as any).username || null,
-        email: (u as any).email || null,
-        avatar_url: (u as any).avatar_url || null,
-      })
+      const { data: user } = await supabaseAdmin.auth.admin.getUserById(id)
+      if (user?.user) {
+        users.push({
+          auth_user_id: id,
+          name: user.user.user_metadata?.name || user.user.email?.split('@')[0] || null,
+          email: user.user.email || null,
+          avatar_url: user.user.user_metadata?.avatar_url || null,
+        })
+      }
     } catch (e) {
       // Fallback: ensure we at least cache the ID so relations work
       users.push({
-        whop_user_id: id,
+        auth_user_id: id,
         name: null,
-        username: null,
         email: null,
         avatar_url: null,
       })
@@ -40,91 +41,51 @@ export async function upsertUsersFromWhop(userIds: string[]) {
   }
   if (users.length === 0) return { success: false, error: "No valid users" }
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from("users")
-    .upsert(users, { onConflict: "whop_user_id" })
+    .upsert(users, { onConflict: "auth_user_id" })
 
   if (error) return { success: false, error: error.message }
   return { success: true }
 }
 
-export async function resolveUsernamesToIds(usernames: string[]) {
-  if (!Array.isArray(usernames) || usernames.length === 0) return { success: false, error: "No usernames provided" }
-  const unique = Array.from(new Set(usernames.map(u => (u || "").trim()).filter(Boolean)))
+export async function resolveEmailsToIds(emails: string[]) {
+  if (!Array.isArray(emails) || emails.length === 0) return { success: false, error: "No emails provided" }
+  const unique = Array.from(new Set(emails.map(e => (e || "").trim().toLowerCase()).filter(Boolean)))
   const userIds: string[] = []
-  const usersToUpsert: any[] = []
 
-  // 1) Try local cache first
-  let foundUsernames = new Set<string>()
-  try {
-    const { data: cached } = await supabase
-      .from("users")
-      .select("whop_user_id, username, name, email, avatar_url")
-      .in("username", unique)
-    const cachedMap = new Map((cached || []).map(u => [u.username, u]))
-    for (const username of unique) {
-      const hit = cachedMap.get(username)
-      if (hit) {
-        userIds.push(hit.whop_user_id)
-        foundUsernames.add(username)
-      }
-    }
-  } catch (e) {
-    // ignore cache errors, we'll fallback to API below
-  }
-
-  // 2) For any usernames not found locally, try Whop API and cache
-  const remaining = unique.filter(u => !foundUsernames.has(u))
-  for (const username of remaining) {
+  // Look up users by email in Supabase auth
+  for (const email of unique) {
     try {
-      const usersApi: any = (whopsdk as any).users
-      let resp: any = null
-      if (usersApi && typeof usersApi.list === 'function') {
-        resp = await usersApi.list({ username })
-      } else if (usersApi && typeof usersApi.search === 'function') {
-        resp = await usersApi.search({ username })
-      }
-      if (resp && resp.data && resp.data.length > 0) {
-        const user = resp.data[0]
-        userIds.push(user.id)
-        usersToUpsert.push({
-          whop_user_id: user.id,
-          name: user.name || null,
-          username: user.username || null,
-          email: user.email || null,
-          avatar_url: user.avatar_url || null,
-        })
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers()
+      if (data?.users) {
+        const user = data.users.find((u: any) => u.email?.toLowerCase() === email)
+        if (user) {
+          userIds.push(user.id)
+        }
       }
     } catch (e) {
-      console.error(`Failed to resolve username ${username}:`, e)
+      console.error(`Failed to resolve email ${email}:`, e)
     }
   }
 
-  if (userIds.length === 0) return { success: false, error: "No valid usernames found" }
-
-  if (usersToUpsert.length > 0) {
-    const { error } = await supabase
-      .from("users")
-      .upsert(usersToUpsert, { onConflict: "whop_user_id" })
-    if (error) console.error("Failed to cache users:", error)
-  }
-
+  if (userIds.length === 0) return { success: false, error: "No valid emails found" }
   return { success: true, data: Array.from(new Set(userIds)) }
 }
 
 export async function getCachedUsersByIds(userIds: string[]) {
   if (userIds.length === 0) return []
-  const { data } = await supabase
+  const { data } = await supabaseAdmin
     .from("users")
     .select("*")
-    .in("whop_user_id", userIds)
+    .in("auth_user_id", userIds)
   return data || []
 }
 
 export async function grantExamRetake(moduleId: string, userIds: string[], grantedBy: string) {
   try {
     // Ensure users are cached
-    await upsertUsersFromWhop(userIds)
+    await upsertUsersFromSupabase(userIds)
 
     const rows = userIds.map((uid) => ({ 
       module_id: moduleId, 
@@ -133,7 +94,7 @@ export async function grantExamRetake(moduleId: string, userIds: string[], grant
       used_at: null // Reset used_at to null when granting/re-granting
     }))
     // Use upsert with onConflict to handle duplicates - if grant already exists, update granted_at and reset used_at to null
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("exam_retakes")
       .upsert(rows, { 
         onConflict: "module_id,user_id",
@@ -152,17 +113,17 @@ export async function grantExamRetake(moduleId: string, userIds: string[], grant
   }
 }
 
-export async function grantExamRetakeByUsernames(moduleId: string, usernames: string[], grantedBy: string) {
+export async function grantExamRetakeByEmails(moduleId: string, emails: string[], grantedBy: string) {
   try {
-    // Resolve usernames to user IDs
-    const resolveResult = await resolveUsernamesToIds(usernames)
+    // Resolve emails to user IDs
+    const resolveResult = await resolveEmailsToIds(emails)
     if (!resolveResult.success) {
       return { success: false, error: resolveResult.error }
     }
 
     const userIds = resolveResult.data || []
     if (userIds.length === 0) {
-      return { success: false, error: "No valid usernames found" }
+      return { success: false, error: "No valid emails found" }
     }
 
     // Grant retakes using the resolved user IDs
@@ -177,10 +138,10 @@ export async function searchCachedUsers(query: string, limit: number = 10) {
     const q = (query || "").trim()
     if (!q) return { success: true, data: [] }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("users")
-      .select("whop_user_id, username, name, email")
-      .or(`username.ilike.%${q}%,name.ilike.%${q}%,email.ilike.%${q}%`)
+      .select("auth_user_id, name, email")
+      .or(`name.ilike.%${q}%,email.ilike.%${q}%`)
       .limit(limit)
 
     if (error) return { success: false, error: error.message, data: [] }
@@ -216,7 +177,7 @@ export async function hasExamRetakeAccess(moduleId: string, userId: string) {
 export async function listExamRetakes(moduleId: string) {
   try {
     // Fetch raw grants first
-    const { data: grants, error: gErr } = await supabase
+    const { data: grants, error: gErr } = await supabaseAdmin
       .from("exam_retakes")
       .select("id, user_id, granted_by, granted_at, used_at")
       .eq("module_id", moduleId)
@@ -226,17 +187,17 @@ export async function listExamRetakes(moduleId: string) {
     const userIds = Array.from(new Set((grants || []).map((g: any) => g.user_id)))
     let usersById: Record<string, any> = {}
     if (userIds.length > 0) {
-      const { data: usersData } = await supabase
+      const { data: usersData } = await supabaseAdmin
         .from("users")
-        .select("whop_user_id, username, name, email, avatar_url")
-        .in("whop_user_id", userIds)
-      for (const u of usersData || []) usersById[u.whop_user_id] = u
+        .select("auth_user_id, name, email, avatar_url")
+        .in("auth_user_id", userIds)
+      for (const u of usersData || []) usersById[u.auth_user_id] = u
     }
 
     const rows = (grants || []).map((r: any) => ({
       id: r.id,
       user_id: r.user_id,
-      username: usersById[r.user_id]?.username || null,
+      email: usersById[r.user_id]?.email || null,
       name: usersById[r.user_id]?.name || null,
       granted_at: r.granted_at,
       used_at: r.used_at || null,

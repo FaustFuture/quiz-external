@@ -1,4 +1,3 @@
-import { withWhopAppConfig } from "@whop/react/next.config";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -18,11 +17,6 @@ const nextConfig: NextConfig = {
     // !! WARN !!
     ignoreBuildErrors: true,
   },
-  eslint: {
-    // Warning: This allows production builds to successfully complete even if
-    // your project has ESLint errors.
-    ignoreDuringBuilds: true,
-  },
 };
 
-export default withWhopAppConfig(nextConfig);
+export default nextConfig;

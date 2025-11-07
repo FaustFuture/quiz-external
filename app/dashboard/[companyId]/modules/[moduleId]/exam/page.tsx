@@ -1,5 +1,4 @@
-import { headers } from "next/headers"
-import { whopsdk } from "@/lib/whop-sdk"
+import { requireAuth } from "@/lib/supabase-server"
 import { DashboardNavbar } from "@/components/dashboard-navbar"
 import { getModules } from "@/app/actions/modules"
 import { getExercises } from "@/app/actions/exercises"
@@ -18,21 +17,18 @@ interface ExamPageProps {
 export default async function ExamPage({ params }: ExamPageProps) {
   const { companyId, moduleId } = await params
   
-  // Ensure the user is logged in on whop
-  const { userId } = await whopsdk.verifyUserToken(await headers())
+  // Ensure the user is logged in with Supabase
+  const user = await requireAuth()
+  const userId = user.id
 
-  // Fetch the company and user data
-  const [company, user, companyRecord] = await Promise.all([
-    whopsdk.companies.retrieve(companyId),
-    whopsdk.users.retrieve(userId),
-    getCompany(companyId)
-  ])
+  // Fetch the company data
+  const companyRecord = await getCompany(companyId)
   
-  // Get company name, fallback to ID if name is not available
-  const companyName = (company as any).name || (company as any).title || companyId
+  // Get company name from database
+  const companyName = companyRecord?.name || companyId
   
-  // Get user name, fallback to ID if name is not available
-  const userName = (user as any).name || (user as any).username || (user as any).email || userId
+  // Get user name from Supabase auth
+  const userName = user.email?.split('@')[0] || user.id.slice(0, 8)
 
   // Get modules to find the current module
   const modules = await getModules(companyId)

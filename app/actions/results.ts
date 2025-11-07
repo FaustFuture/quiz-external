@@ -1,7 +1,7 @@
 "use server"
 
-import { supabase } from "@/lib/supabase"
-import { upsertUsersFromWhop } from "@/app/actions/users"
+import { supabase, supabaseAdmin } from "@/lib/supabase"
+import { upsertUsersFromSupabase } from "@/app/actions/users"
 import { revalidatePath } from "next/cache"
 
 export type Result = {
@@ -45,13 +45,13 @@ export async function saveExamResult(
   try {
     // Best-effort: cache the submitting user in `users` table
     try {
-      await upsertUsersFromWhop([userId])
+      await upsertUsersFromSupabase([userId])
     } catch {}
 
     // Allow multiple attempts - no longer delete existing results
 
     // Create the new result record
-    const { data: result, error: resultError } = await supabase
+    const { data: result, error: resultError } = await supabaseAdmin
       .from("results")
       .insert({
         user_id: userId,
@@ -263,7 +263,7 @@ export async function getResultWithAnswers(resultId: string) {
 
     // Now fetch exercises and alternatives separately for each answer
     const answersWithDetails = await Promise.all(
-      examAnswers.map(async (answer) => {
+      examAnswers.map(async (answer: any) => {
         const [exercise, alternative] = await Promise.all([
           supabase
             .from("exercises")
@@ -315,9 +315,9 @@ export async function getUserRetakeStats(userId: string, moduleId: string) {
 
     const attempts = data || []
     const totalAttempts = attempts.length
-    const bestScore = attempts.length > 0 ? Math.max(...attempts.map(a => a.score)) : 0
+    const bestScore = attempts.length > 0 ? Math.max(...attempts.map((a: any) => a.score)) : 0
     const latestScore = attempts.length > 0 ? attempts[0].score : 0
-    const averageScore = attempts.length > 0 ? attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length : 0
+    const averageScore = attempts.length > 0 ? attempts.reduce((sum: number, a: any) => sum + a.score, 0) / attempts.length : 0
 
     return {
       success: true,
@@ -326,7 +326,7 @@ export async function getUserRetakeStats(userId: string, moduleId: string) {
         bestScore,
         latestScore,
         averageScore: Math.round(averageScore * 100) / 100,
-        attempts: attempts.map(a => ({
+        attempts: attempts.map((a: any) => ({
           id: a.id,
           score: a.score,
           submitted_at: a.submitted_at,
@@ -363,7 +363,7 @@ export async function getModuleRetakeStats(moduleId: string) {
     const results = data || []
     
     // Group by user to get per-user statistics
-    const userStats = results.reduce((acc: any, result) => {
+    const userStats = results.reduce((acc: any, result: any) => {
       const userId = result.user_id
       if (!acc[userId]) {
         acc[userId] = {

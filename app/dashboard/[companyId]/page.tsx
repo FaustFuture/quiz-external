@@ -1,11 +1,11 @@
-import { headers } from "next/headers";
-import { whopsdk } from "@/lib/whop-sdk";
+import { requireAuth } from "@/lib/supabase-server";
 import { getRecentResults, getResultsByUserAndModule } from "@/app/actions/results";
 import { getModules } from "@/app/actions/modules";
 import { getExercises } from "@/app/actions/exercises";
 import { getAlternatives } from "@/app/actions/alternatives";
 import { getCompany, createOrUpdateCompany } from "@/app/actions/company";
 import { DashboardWithToggle } from "@/components/dashboard-with-toggle";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export default async function DashboardPage({
 	params,
@@ -14,49 +14,43 @@ export default async function DashboardPage({
 }) {
 	const { companyId } = await params;
 	
-	// Get headers for debugging
-	const headersList = await headers();
-	console.log("Headers:", Object.fromEntries(headersList.entries()));
+	console.log("[Dashboard] Company ID:", companyId);
 	
-	// Ensure the user is logged in on whop
-	const { userId } = await whopsdk.verifyUserToken(headersList);
-	console.log("Verified User ID:", userId);
+	// Ensure the user is logged in with Supabase
+	const user = await requireAuth();
+	const userId = user.id;
+	
+	console.log("[Dashboard] Authenticated User ID:", userId);
+	console.log("[Dashboard] User Email:", user.email);
 
-	// Fetch the necessary data from whop
-	const [company, user, access] = await Promise.all([
-		whopsdk.companies.retrieve(companyId),
-		whopsdk.users.retrieve(userId),
-		whopsdk.users.checkAccess(companyId, { id: userId }),
-	]);
-
-	console.log("Company:", company);
-	console.log("User:", user);
-	console.log("Access:", access);
-	// Get company name, fallback to ID if name is not available
-	const companyName = (company as any).name || (company as any).title || companyId;
-
-	// Fetch or create company record
+	// Fetch company data from database
 	let companyData = null;
+	let companyName = companyId; // Default fallback
+	
 	try {
 		companyData = await getCompany(companyId);
-		console.log("Company data:", companyData);
+		console.log("[Dashboard] Company data:", companyData);
+		
 		if (!companyData) {
 			// Create company record if it doesn't exist
-			console.log("Creating company record for:", companyId, companyName);
-			const createResult = await createOrUpdateCompany(companyId, companyName);
-			console.log("Create result:", createResult);
+			console.log("[Dashboard] Creating company record for:", companyId);
+			const createResult = await createOrUpdateCompany(companyId, companyId);
+			console.log("[Dashboard] Create result:", createResult);
 			if (createResult.success) {
 				companyData = createResult.data;
 			}
 		}
+		
+		if (companyData?.name) {
+			companyName = companyData.name;
+		}
 	} catch (error) {
-		console.log("Error with company data, continuing without it:", error);
-		// Continue without company data - the component will handle it
+		console.log("[Dashboard] Error with company data, continuing without it:", error);
 	}
 
-	// Check if user is admin based on access data
-	const isAdmin = checkUserIsAdmin(userId, company, access);
-	console.log("Is admin:", isAdmin);
+	// Check if user is admin - for now, check if they created the company or based on a companies_users table
+	const isAdmin = await checkUserIsAdmin(userId, companyId);
+	console.log("[Dashboard] Is admin:", isAdmin);
 
 	// Fetch recent results and modules for admin sidebar
 	const [recentResults, modules] = isAdmin 
@@ -118,30 +112,30 @@ return (
 	);
 }
 
-function checkUserIsAdmin(userId: string, company: any, access: any): boolean {
-	console.log("Checking admin status for user:", userId);
-	console.log("Company owner ID:", company?.owner_user?.id);
-	console.log("Access data:", access);
-	
-	// Check if user is the company owner
-	if (company?.owner_user?.id === userId) {
-		console.log("User is company owner - granting admin access");
-		return true;
-	}
-	
-	// Check access level
-	if (access?.access_level === "admin") {
-		console.log("User has admin access level - granting admin access");
-		return true;
-	}
-	
-	// Check if user has access
-	if (access?.has_access === true) {
-		console.log("User has access but not admin level - member view");
+async function checkUserIsAdmin(userId: string, companyId: string): Promise<boolean> {
+	try {
+		console.log("[checkUserIsAdmin] Checking for user:", userId, "company:", companyId);
+		
+		const { data, error } = await supabaseAdmin
+			.from('companies_users')
+			.select('role')
+			.eq('company_id', companyId)
+			.eq('user_id', userId)
+			.single();
+		
+		console.log("[checkUserIsAdmin] Query result:", { data, error });
+		
+		if (error || !data) {
+			console.log("[checkUserIsAdmin] No membership found or error, user is not admin");
+			return false;
+		}
+		
+		const isAdmin = data.role === 'admin';
+		console.log("[checkUserIsAdmin] Role:", data.role, "Is admin:", isAdmin);
+		return isAdmin;
+	} catch (error) {
+		console.log("[checkUserIsAdmin] Error checking admin status:", error);
 		return false;
 	}
-	
-	console.log("User has no access - member view");
-	return false;
 }
 
