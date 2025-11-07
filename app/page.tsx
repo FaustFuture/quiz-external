@@ -4,6 +4,8 @@ import { getCurrentUser } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import { getUserCompanies } from "@/app/actions/company";
 
+export const runtime = 'nodejs';
+
 export default async function Page() {
 	const user = await getCurrentUser();
 	console.log("[Home Page] User:", user?.id);
