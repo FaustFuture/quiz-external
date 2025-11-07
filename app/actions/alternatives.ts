@@ -1,6 +1,7 @@
 "use server"
 
 import { supabase } from "@/lib/supabase"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { revalidatePath } from "next/cache"
 
 export type Alternative = {
@@ -24,6 +25,8 @@ export async function createAlternative(
   imageUrls?: string[] | null
 ) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     // Get existing alternatives for this exercise
     const { data: existingAlternatives } = await supabase
       .from("alternatives")
@@ -124,6 +127,8 @@ export async function createAlternative(
 
 export async function getAlternatives(exerciseId: string): Promise<Alternative[]> {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     const { data, error } = await supabase
       .from("alternatives")
       .select("*")
@@ -148,6 +153,8 @@ export async function updateAlternative(
   updates: { content?: string; is_correct?: boolean; explanation?: string; image_url?: string | null; image_urls?: string[] | null }
 ) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     // If we're making this alternative correct, we need to handle this carefully
     if (updates.is_correct === true) {
       // First, update this alternative to be correct
@@ -220,6 +227,8 @@ export async function updateAlternative(
 
 export async function updateAlternativeOrder(alternativeId: string, newOrder: number, exerciseId: string) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     // First, temporarily set all orders to negative values to avoid conflicts
     const { error: tempError } = await supabase
       .from("alternatives")
@@ -282,6 +291,8 @@ export async function updateAlternativeOrder(alternativeId: string, newOrder: nu
 
 export async function deleteAlternative(alternativeId: string, exerciseId: string) {
   try {
+    const supabase = await createServerSupabaseClient()
+    
     // First, get all alternatives for this exercise
     const { data: allAlternatives, error: fetchError } = await supabase
       .from("alternatives")

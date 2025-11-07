@@ -78,9 +78,12 @@ CREATE TABLE IF NOT EXISTS exercises (
 CREATE TABLE IF NOT EXISTS alternatives (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   exercise_id UUID NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
-  text TEXT NOT NULL,
+  content TEXT NOT NULL,
   is_correct BOOLEAN DEFAULT false,
-  order_index INTEGER DEFAULT 0,
+  explanation TEXT,
+  "order" INTEGER NOT NULL DEFAULT 0,
+  image_url TEXT,
+  image_urls TEXT[],
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

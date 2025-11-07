@@ -78,14 +78,14 @@ export async function saveExamResult(
       time_spent_seconds: answer.timeSpentSeconds || 0,
     }))
 
-    const { error: answersError } = await supabase
+    const { error: answersError } = await supabaseAdmin
       .from("exam_answers")
       .insert(examAnswersData)
 
     if (answersError) {
       console.error("Error creating exam answers:", answersError)
       // If answers fail, delete the result to maintain data integrity
-      await supabase.from("results").delete().eq("id", result.id)
+      await supabaseAdmin.from("results").delete().eq("id", result.id)
       return { success: false, error: answersError.message }
     }
 
