@@ -18,8 +18,6 @@ export const metadata: Metadata = {
 	description: "Interactive Quiz & Learning Platform",
 };
 
-export const runtime = 'nodejs';
-
 export default function RootLayout({
 	children,
 }: Readonly<{
