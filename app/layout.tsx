@@ -16,6 +16,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
 	title: "Quiz Platform",
 	description: "Interactive Quiz & Learning Platform",
+	icons: {
+		icon: "/icon.jpg",
+	},
 };
 
 export default function RootLayout({
