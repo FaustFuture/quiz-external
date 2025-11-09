@@ -112,7 +112,7 @@ export function SortableModuleCard({ module, companyId, isActive = false, onModu
               </CardDescription>
             )}
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1" suppressHydrationWarning>
             {/* Drag Handle */}
             <Button
               variant="ghost"
@@ -121,6 +121,7 @@ export function SortableModuleCard({ module, companyId, isActive = false, onModu
               {...attributes}
               {...listeners}
               onClick={(e) => e.stopPropagation()}
+              suppressHydrationWarning
             >
               <GripVertical className="h-4 w-4" />
               <span className="sr-only">Drag to reorder</span>

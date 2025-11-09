@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,13 +11,17 @@ import { Trophy, CheckCircle, XCircle, Eye, Download, Filter } from "lucide-reac
 import { type ResultWithModule } from "@/app/actions/results"
 import { ResultDetailsModal } from "@/components/result-details-modal"
 import { type Module } from "@/app/actions/modules"
+import { createClientSupabaseClient } from "@/lib/supabase-client"
 
 interface ResultsSidebarProps {
   results: ResultWithModule[]
   modules: Module[]
+  companyId: string // Added for real-time subscription filtering
 }
 
-export function ResultsSidebar({ results, modules }: ResultsSidebarProps) {
+export function ResultsSidebar({ results, modules: initialModules, companyId }: ResultsSidebarProps) {
+  // Real-time state management: maintain local modules state that updates via Supabase Realtime
+  const [modules, setModules] = useState<Module[]>(initialModules)
   const [selectedResultId, setSelectedResultId] = useState<string | null>(null)
   const [selectedModuleId, setSelectedModuleId] = useState<string>("all")
   const [selectedType, setSelectedType] = useState<"all" | "module" | "exam">("all")
@@ -26,6 +30,100 @@ export function ResultsSidebar({ results, modules }: ResultsSidebarProps) {
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split("T")[0])
   const [selectedWeek, setSelectedWeek] = useState<string>(() => getISOWeekValue(new Date()))
   const [selectedMonth, setSelectedMonth] = useState<string>(() => new Date().toISOString().slice(0, 7))
+
+  // Real-time subscription to modules table
+  useEffect(() => {
+    const supabase = createClientSupabaseClient()
+
+    console.log('[ResultsSidebar] Setting up real-time subscription for company:', companyId)
+    
+    // Check if user is authenticated
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error || !data.user) {
+        console.error('[ResultsSidebar] Not authenticated, cannot subscribe to realtime:', error)
+        return
+      }
+      console.log('[ResultsSidebar] User authenticated:', data.user.email)
+    })
+
+    // Subscribe to changes in the modules table
+    // Use a simpler channel name (removed Date.now() to allow sharing across tabs)
+    const channelName = `modules-${companyId}`
+    const channel = supabase
+      .channel(channelName, {
+        config: {
+          broadcast: { self: true }, // Receive own messages
+        }
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all events: INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'modules',
+          filter: `company_id=eq.${companyId}`, // Only listen to modules for this company
+        },
+        (payload) => {
+          console.log('[ResultsSidebar] Real-time change received:', payload)
+
+          if (payload.eventType === 'INSERT') {
+            // Add new module to the list
+            const newModule = payload.new as Module
+            setModules((prevModules) => {
+              // Check if module already exists to avoid duplicates
+              const exists = prevModules.some(m => m.id === newModule.id)
+              if (exists) return prevModules
+              
+              // Add to beginning of list (matches created_at DESC order)
+              return [newModule, ...prevModules]
+            })
+            console.log('[ResultsSidebar] Module added:', newModule.title)
+          } else if (payload.eventType === 'UPDATE') {
+            // Update existing module
+            const updatedModule = payload.new as Module
+            setModules((prevModules) =>
+              prevModules.map((m) =>
+                m.id === updatedModule.id ? updatedModule : m
+              )
+            )
+            console.log('[ResultsSidebar] Module updated:', updatedModule.title)
+          } else if (payload.eventType === 'DELETE') {
+            // Remove deleted module
+            const deletedModule = payload.old as Module
+            setModules((prevModules) =>
+              prevModules.filter((m) => m.id !== deletedModule.id)
+            )
+            console.log('[ResultsSidebar] Module deleted:', deletedModule.id)
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        console.log('[ResultsSidebar] Subscription status:', status)
+        if (status === 'SUBSCRIBED') {
+          console.log('[ResultsSidebar] ✅ Successfully subscribed to real-time updates')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[ResultsSidebar] ❌ Failed to subscribe to real-time updates')
+          console.error('[ResultsSidebar] Error details:', err)
+          console.error('[ResultsSidebar] Channel name:', channelName)
+          console.error('[ResultsSidebar] Company ID:', companyId)
+        } else if (status === 'TIMED_OUT') {
+          console.error('[ResultsSidebar] ⏱️ Subscription timed out')
+        } else if (status === 'CLOSED') {
+          console.warn('[ResultsSidebar] 🔌 Connection closed')
+        }
+      })
+
+    // Cleanup: Unsubscribe when component unmounts
+    return () => {
+      console.log('[ResultsSidebar] Cleaning up real-time subscription')
+      supabase.removeChannel(channel)
+    }
+  }, [companyId]) // Re-subscribe if companyId changes
+
+  // Sync local state when initialModules prop changes (e.g., on page refresh)
+  useEffect(() => {
+    setModules(initialModules)
+  }, [initialModules])
 
   // Quick lookup for module type
   const moduleIdToType = useMemo(() => {

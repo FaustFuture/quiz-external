@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   DndContext,
   closestCenter,
@@ -32,6 +32,12 @@ export function SortableModulesList({ modules, companyId, onModuleDeleted }: Sor
   const [items, setItems] = useState(modules)
   const [activeId, setActiveId] = useState<string | null>(null)
   const router = useRouter()
+
+  // Sync internal state when modules prop changes (real-time updates)
+  useEffect(() => {
+    console.log('[SortableModulesList] Modules prop changed, updating items. Count:', modules.length)
+    setItems(modules)
+  }, [modules])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -92,7 +98,8 @@ export function SortableModulesList({ modules, companyId, onModuleDeleted }: Sor
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={items.map(item => item.id)} strategy={rectSortingStrategy}>
-        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {/* suppressHydrationWarning fixes the DndDescribedBy mismatch */}
+        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" suppressHydrationWarning>
           {items.map((module) => (
             <SortableModuleCard 
               key={module.id} 

@@ -92,7 +92,7 @@ export function DashboardWithToggle({
             </div>
           </main>
           <aside className="w-[400px] border-l border-border bg-background p-6">
-            <ResultsSidebar results={recentResults} modules={modules} />
+            <ResultsSidebar results={recentResults} modules={modules} companyId={companyId} />
           </aside>
         </div>
       ) : (
