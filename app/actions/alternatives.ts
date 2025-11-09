@@ -229,21 +229,11 @@ export async function updateAlternativeOrder(alternativeId: string, newOrder: nu
   try {
     const supabase = await createServerSupabaseClient()
     
-    // First, temporarily set all orders to negative values to avoid conflicts
-    const { error: tempError } = await supabase
-      .from("alternatives")
-      .update({ order: -1 })
-      .eq("exercise_id", exerciseId)
-
-    if (tempError) {
-      console.error("Error setting temporary orders:", tempError)
-      return { success: false, error: tempError.message }
-    }
-
-    // Get all alternatives for this exercise
+    // Get all alternatives for this exercise FIRST (before any updates)
+    // Fetch ALL fields to preserve data integrity during upsert
     const { data: allAlternatives, error: fetchError } = await supabase
       .from("alternatives")
-      .select("id, order")
+      .select("*")
       .eq("exercise_id", exerciseId)
       .order("order", { ascending: true })
 
@@ -252,7 +242,7 @@ export async function updateAlternativeOrder(alternativeId: string, newOrder: nu
       return { success: false, error: fetchError.message }
     }
 
-    if (!allAlternatives) {
+    if (!allAlternatives || allAlternatives.length === 0) {
       return { success: false, error: "No alternatives found" }
     }
 
@@ -262,22 +252,38 @@ export async function updateAlternativeOrder(alternativeId: string, newOrder: nu
       return { success: false, error: "Alternative not found" }
     }
 
-    // Create new order array
+    // Calculate new order array in memory (no DB changes yet)
     const newOrderArray = [...allAlternatives]
     const [movedAlternative] = newOrderArray.splice(oldIndex, 1)
     newOrderArray.splice(newOrder, 0, movedAlternative)
 
-    // Update all alternatives with new order values
+    // Step 1: Set all alternatives to temporary high order values to avoid conflicts
+    // This ensures no duplicate (exercise_id, order) pairs during reordering
     for (let i = 0; i < newOrderArray.length; i++) {
-      const { error } = await supabase
+      const tempOrder = 10000 + i  // Use large numbers as temporary values
+      const { error: tempError } = await supabase
+        .from("alternatives")
+        .update({ order: tempOrder })
+        .eq("id", newOrderArray[i].id)
+        .eq("exercise_id", exerciseId)
+
+      if (tempError) {
+        console.error(`Failed to set temporary order:`, tempError)
+        return { success: false, error: tempError.message }
+      }
+    }
+
+    // Step 2: Now set the correct final order values
+    for (let i = 0; i < newOrderArray.length; i++) {
+      const { error: finalError } = await supabase
         .from("alternatives")
         .update({ order: i })
         .eq("id", newOrderArray[i].id)
         .eq("exercise_id", exerciseId)
 
-      if (error) {
-        console.error("Error updating alternative order:", error)
-        return { success: false, error: error.message }
+      if (finalError) {
+        console.error(`Failed to set final order:`, finalError)
+        return { success: false, error: finalError.message }
       }
     }
 

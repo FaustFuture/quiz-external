@@ -58,7 +58,10 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
   const searchParams = useSearchParams()
 
   const currentQuestion = questions[currentQuestionIndex]
-  const [imageSize, setImageSize] = useState<"aspect-ratio" | "large" | "medium" | "small">(currentQuestion.image_display_size as "aspect-ratio" | "large" | "medium" | "small" || "aspect-ratio")
+  // BUGFIX: Handle case when currentQuestion is undefined (empty questions array)
+  const [imageSize, setImageSize] = useState<"aspect-ratio" | "large" | "medium" | "small">(
+    (currentQuestion?.image_display_size as "aspect-ratio" | "large" | "medium" | "small") || "aspect-ratio"
+  )
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100
 
   // Load retake stats and access on component mount
@@ -314,6 +317,9 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
 
   // Check if this question has already been answered and reset timer
   useEffect(() => {
+    // BUGFIX: Handle case when currentQuestion is undefined
+    if (!currentQuestion) return
+    
     const existingAnswer = answers.find(a => a.questionId === currentQuestion.id)
     if (existingAnswer) {
       setSelectedAlternativeId(existingAnswer.selectedAlternativeId)
@@ -324,12 +330,15 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
       // Reset timer for new question
       questionStartTime.current = Date.now()
     }
-  }, [currentQuestionIndex, answers, currentQuestion.id])
+  }, [currentQuestionIndex, answers, currentQuestion?.id])
 
   // Update image size when question changes
   useEffect(() => {
-    setImageSize(currentQuestion.image_display_size as "aspect-ratio" | "large" | "medium" | "small" || "aspect-ratio")
-  }, [currentQuestion.image_display_size])
+    // BUGFIX: Handle case when currentQuestion is undefined
+    if (currentQuestion?.image_display_size) {
+      setImageSize(currentQuestion.image_display_size as "aspect-ratio" | "large" | "medium" | "small")
+    }
+  }, [currentQuestion?.image_display_size])
 
   const handleAlternativeSelect = (alternativeId: string) => {
     // Block answering if exam retake not granted

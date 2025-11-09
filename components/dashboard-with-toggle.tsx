@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, memo } from "react"
 import { Switch } from "@/components/ui/switch"
 import { ModulesSection } from "@/components/modules-section"
 import { MemberModulesViewWithFilter } from "@/components/member-modules-view-with-filter"

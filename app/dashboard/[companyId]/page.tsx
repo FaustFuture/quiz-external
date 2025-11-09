@@ -1,11 +1,11 @@
 import { requireAuth } from "@/lib/supabase-server";
-import { getRecentResults, getResultsByUserAndModule } from "@/app/actions/results";
+import { getRecentResults } from "@/app/actions/results";
 import { getModules } from "@/app/actions/modules";
-import { getExercises } from "@/app/actions/exercises";
-import { getAlternatives } from "@/app/actions/alternatives";
 import { getCompany, createOrUpdateCompany } from "@/app/actions/company";
 import { DashboardWithToggle } from "@/components/dashboard-with-toggle";
 import { supabaseAdmin } from "@/lib/supabase";
+// PERFORMANCE OPTIMIZATION: Import optimized data fetching functions
+import { getModulesWithEligibilityCheck, getUserResultsForModules } from "@/app/actions/modules-optimized";
 
 export default async function DashboardPage({
 	params,
@@ -60,42 +60,20 @@ export default async function DashboardPage({
 		])
 		: [[], []];
 
-	// Base modules list for member view (admin uses the same `modules`)
-	let memberBaseModules = modules;
-
-	// Fetch user results for member view
+	// PERFORMANCE OPTIMIZATION: Use optimized data fetching for member view
+	// This replaces the N+1 query problem that was fetching exercises and alternatives
+	// separately for each module (which could result in hundreds of database queries)
+	let memberModules = modules;
 	let userResults = {};
+	
 	if (!isAdmin) {
-		memberBaseModules = await getModules(companyId);
-		const results = await Promise.all(
-			memberBaseModules.map(async (module) => {
-				const result = await getResultsByUserAndModule(userId, module.id);
-				return { moduleId: module.id, result };
-			})
-		);
-		userResults = results.reduce((acc, { moduleId, result }) => {
-			if (result) acc[moduleId] = result;
-			return acc;
-		}, {} as any);
+		// Fetch eligible modules with a single optimized query instead of N+1 queries
+		memberModules = await getModulesWithEligibilityCheck(companyId);
+		
+		// Batch fetch all user results in a single query instead of one per module
+		const moduleIds = memberModules.map(m => m.id);
+		userResults = await getUserResultsForModules(userId, moduleIds);
 	}
-
-	// Build a filtered list of modules for member view: must have at least one exercise
-	// with non-empty question and at least one alternative
-	const memberModules = await (async () => {
-		const list = [] as typeof memberBaseModules;
-		for (const m of memberBaseModules) {
-			const exs = await getExercises(m.id);
-			let eligible = false;
-			for (const ex of exs) {
-				if (ex.question && ex.question.trim().length > 0) {
-					const alts = await getAlternatives(ex.id);
-					if (alts.length > 0) { eligible = true; break; }
-				}
-			}
-			if (eligible) list.push(m);
-		}
-		return list;
-	})();
 
 return (
 		<DashboardWithToggle

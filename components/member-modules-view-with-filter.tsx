@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo, memo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -47,21 +47,25 @@ export function MemberModulesViewWithFilter({
     return () => { mounted = false }
   }, [userId])
 
-  const filteredModules = modules.filter((m) => {
-    if (filter === 'all') return true
-    return m.type === filter
-  })
+  // PERFORMANCE OPTIMIZATION: Memoize filtered modules to prevent recalculation on every render
+  const filteredModules = useMemo(() => {
+    return modules.filter((m) => {
+      if (filter === 'all') return true
+      return m.type === filter
+    })
+  }, [modules, filter])
 
-  const getTitle = () => {
+  // PERFORMANCE OPTIMIZATION: Memoize title computation
+  const title = useMemo(() => {
     if (filter === 'module') return 'Available Quizzes'
     if (filter === 'exam') return 'Available Exams'
     return 'All Quizzes and Exams'
-  }
+  }, [filter])
 
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight text-foreground">{getTitle()}</h2>
+        <h2 className="text-3xl font-bold tracking-tight text-foreground">{title}</h2>
         <div className="w-40">
           <Select value={filter} onValueChange={(v) => setFilter(v as any)}>
             <SelectTrigger>
@@ -110,7 +114,8 @@ interface ModuleExamCardProps {
   canRetakeExam: boolean
 }
 
-function ModuleExamCard({ module, companyId, userId, hasResult, result, canRetakeExam }: ModuleExamCardProps) {
+// PERFORMANCE OPTIMIZATION: Memoize individual module cards to prevent re-renders
+const ModuleExamCard = memo(({ module, companyId, userId, hasResult, result, canRetakeExam }: ModuleExamCardProps) => {
   return (
     <Card className="relative group hover:shadow-xl border-border bg-card hover:bg-muted hover:border-emerald-500/50 flex flex-col min-h-64">
       <CardHeader className="pb-4">
@@ -219,4 +224,4 @@ function ModuleExamCard({ module, companyId, userId, hasResult, result, canRetak
       </CardContent>
     </Card>
   )
-}
+})

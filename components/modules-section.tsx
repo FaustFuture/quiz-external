@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { AddModuleDialog } from "@/components/add-module-dialog"
 import { SortableModulesList } from "@/components/sortable-modules-list"
 import { getModules, type Module } from "@/app/actions/modules"
@@ -17,78 +17,53 @@ export function ModulesSection({ companyId, initialModules }: ModulesSectionProp
   const [isLoading, setIsLoading] = useState(false)
   const [filter, setFilter] = useState<'all' | 'module' | 'exam'>('all')
 
-  // Real-time subscription for quiz grid updates
+  // PERFORMANCE OPTIMIZATION: Use singleton realtime manager to prevent duplicate subscriptions
   useEffect(() => {
-    const supabase = createClientSupabaseClient()
-
     console.log('[ModulesSection] Setting up real-time subscription for company:', companyId)
+    
+    // Import dynamically to avoid SSR issues
+    import('@/lib/realtime-manager').then(({ realtimeManager }) => {
+      const unsubscribe = realtimeManager.subscribeToModules(companyId, (payload) => {
+        console.log('[ModulesSection] Real-time change received:', payload)
 
-    // Subscribe to changes in the modules table
-    const channelName = `modules-grid-${companyId}`
-    const channel = supabase
-      .channel(channelName, {
-        config: {
-          broadcast: { self: true },
-        }
-      })
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // Listen to INSERT, UPDATE, DELETE
-          schema: 'public',
-          table: 'modules',
-          filter: `company_id=eq.${companyId}`,
-        },
-        (payload) => {
-          console.log('[ModulesSection] Real-time change received:', payload)
-
-          if (payload.eventType === 'INSERT') {
-            const newModule = payload.new as Module
-            setModules((prevModules) => {
-              // Check if already exists to avoid duplicates
-              const exists = prevModules.some(m => m.id === newModule.id)
-              if (exists) {
-                console.log('[ModulesSection] Quiz already exists, skipping:', newModule.title)
-                return prevModules
-              }
-              
-              // Add to beginning (newest first)
-              const newModules = [newModule, ...prevModules]
-              console.log('[ModulesSection] ✅ Quiz added:', newModule.title, '| New count:', newModules.length)
-              return newModules
-            })
-            console.log('[ModulesSection] State update triggered for:', newModule.title)
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedModule = payload.new as Module
-            setModules((prevModules) =>
-              prevModules.map((m) =>
-                m.id === updatedModule.id ? updatedModule : m
-              )
+        if (payload.eventType === 'INSERT') {
+          const newModule = payload.new as Module
+          setModules((prevModules) => {
+            // Check if already exists to avoid duplicates
+            const exists = prevModules.some(m => m.id === newModule.id)
+            if (exists) {
+              console.log('[ModulesSection] Quiz already exists, skipping:', newModule.title)
+              return prevModules
+            }
+            
+            // Add to beginning (newest first)
+            const newModules = [newModule, ...prevModules]
+            console.log('[ModulesSection] ✅ Quiz added:', newModule.title, '| New count:', newModules.length)
+            return newModules
+          })
+        } else if (payload.eventType === 'UPDATE') {
+          const updatedModule = payload.new as Module
+          setModules((prevModules) =>
+            prevModules.map((m) =>
+              m.id === updatedModule.id ? updatedModule : m
             )
-            console.log('[ModulesSection] ✅ Quiz updated:', updatedModule.title)
-          } else if (payload.eventType === 'DELETE') {
-            const deletedModule = payload.old as Module
-            setModules((prevModules) =>
-              prevModules.filter((m) => m.id !== deletedModule.id)
-            )
-            console.log('[ModulesSection] ✅ Quiz deleted:', deletedModule.id)
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('[ModulesSection] Subscription status:', status)
-        if (status === 'SUBSCRIBED') {
-          console.log('[ModulesSection] ✅ Successfully subscribed to quiz updates')
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('[ModulesSection] ❌ Failed to subscribe to quiz updates')
+          )
+          console.log('[ModulesSection] ✅ Quiz updated:', updatedModule.title)
+        } else if (payload.eventType === 'DELETE') {
+          const deletedModule = payload.old as Module
+          setModules((prevModules) =>
+            prevModules.filter((m) => m.id !== deletedModule.id)
+          )
+          console.log('[ModulesSection] ✅ Quiz deleted:', deletedModule.id)
         }
       })
 
-    // Cleanup
-    return () => {
-      console.log('[ModulesSection] Cleaning up real-time subscription')
-      supabase.removeChannel(channel)
-    }
+      // Cleanup
+      return () => {
+        console.log('[ModulesSection] Cleaning up real-time subscription')
+        unsubscribe()
+      }
+    })
   }, [companyId])
 
   // Sync with initial modules when prop changes
@@ -96,7 +71,8 @@ export function ModulesSection({ companyId, initialModules }: ModulesSectionProp
     setModules(initialModules)
   }, [initialModules])
 
-  const refetchModules = async () => {
+  // PERFORMANCE OPTIMIZATION: Memoize refetch callback to prevent recreation on every render
+  const refetchModules = useCallback(async () => {
     setIsLoading(true)
     try {
       const updatedModules = await getModules(companyId)
@@ -106,12 +82,15 @@ export function ModulesSection({ companyId, initialModules }: ModulesSectionProp
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [companyId])
 
-  const filteredModules = modules.filter((m) => {
-    if (filter === 'all') return true
-    return m.type === filter
-  })
+  // PERFORMANCE OPTIMIZATION: Memoize filtered modules to prevent recalculation on every render
+  const filteredModules = useMemo(() => {
+    return modules.filter((m) => {
+      if (filter === 'all') return true
+      return m.type === filter
+    })
+  }, [modules, filter])
 
   console.log('[ModulesSection] Rendering. Total modules:', modules.length, '| Filtered:', filteredModules.length, '| Filter:', filter)
 
