@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback, memo } from "react"
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { Trash2, MoreVertical, GripVertical, AlertTriangle } from "lucide-react"
@@ -24,7 +24,9 @@ interface SortableModuleCardProps {
   onModuleDeleted?: () => void
 }
 
-export function SortableModuleCard({ module, companyId, isActive = false, onModuleDeleted }: SortableModuleCardProps) {
+// PERFORMANCE OPTIMIZATION: Memoize component to prevent unnecessary re-renders
+// This component re-renders frequently due to drag-and-drop operations
+const SortableModuleCardComponent = ({ module, companyId, isActive = false, onModuleDeleted }: SortableModuleCardProps) => {
   const [isDeleting, setIsDeleting] = useState(false)
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
   const router = useRouter()
@@ -44,7 +46,8 @@ export function SortableModuleCard({ module, companyId, isActive = false, onModu
     transition,
   }
 
-  const handleDelete = async (e: React.MouseEvent) => {
+  // PERFORMANCE OPTIMIZATION: Memoize callbacks to prevent unnecessary re-renders of child components
+  const handleDelete = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation() // Prevent card click
     setIsDeleting(true)
     
@@ -69,11 +72,11 @@ export function SortableModuleCard({ module, companyId, isActive = false, onModu
     } finally {
       setIsDeleting(false)
     }
-  }
+  }, [module.id, companyId, onModuleDeleted, router])
 
-  const handleCardClick = () => {
+  const handleCardClick = useCallback(() => {
     router.push(`/dashboard/${companyId}/modules/${module.id}`)
-  }
+  }, [router, companyId, module.id])
 
   return (
     <Card 
@@ -112,7 +115,7 @@ export function SortableModuleCard({ module, companyId, isActive = false, onModu
               </CardDescription>
             )}
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1" suppressHydrationWarning>
             {/* Drag Handle */}
             <Button
               variant="ghost"
@@ -121,6 +124,7 @@ export function SortableModuleCard({ module, companyId, isActive = false, onModu
               {...attributes}
               {...listeners}
               onClick={(e) => e.stopPropagation()}
+              suppressHydrationWarning
             >
               <GripVertical className="h-4 w-4" />
               <span className="sr-only">Drag to reorder</span>
@@ -180,3 +184,6 @@ export function SortableModuleCard({ module, companyId, isActive = false, onModu
     </Card>
   )
 }
+
+// PERFORMANCE OPTIMIZATION: Export memoized version to prevent re-renders when props haven't changed
+export const SortableModuleCard = memo(SortableModuleCardComponent)

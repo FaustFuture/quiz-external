@@ -40,7 +40,8 @@ export async function saveExamResult(
   score: number,
   totalQuestions: number,
   correctAnswers: number,
-  answers: AnswerSubmission[]
+  answers: AnswerSubmission[],
+  companyId?: string
 ) {
   try {
     // Best-effort: cache the submitting user in `users` table
@@ -89,7 +90,12 @@ export async function saveExamResult(
       return { success: false, error: answersError.message }
     }
 
-    revalidatePath(`/dashboard/[companyId]`, "page")
+    // Revalidate the dashboard page to show new results
+    if (companyId) {
+      revalidatePath(`/dashboard/${companyId}`, "page")
+      console.log(`[saveExamResult] Revalidated path: /dashboard/${companyId}`)
+    }
+    
     return { success: true, data: result }
   } catch (error) {
     console.error("Error saving exam result:", error)
@@ -176,26 +182,80 @@ export async function getRecentResults(
   limit: number = 10
 ): Promise<ResultWithModule[]> {
   try {
-    const { data, error } = await supabase
+    console.log('\n=== getRecentResults START ===')
+    console.log('[getRecentResults] Timestamp:', new Date().toISOString())
+    console.log('[getRecentResults] Company ID:', companyId)
+    console.log('[getRecentResults] Limit:', limit)
+    
+    // Fetch modules for this company first (use admin client to bypass RLS)
+    const { data: companyModules, error: modulesError } = await supabaseAdmin
+      .from("modules")
+      .select("id, title, company_id")
+      .eq("company_id", companyId)
+    
+    if (modulesError) {
+      console.error("[getRecentResults] ❌ Error fetching modules:", modulesError)
+      console.error("[getRecentResults] Error details:", JSON.stringify(modulesError, null, 2))
+      return []
+    }
+    
+    console.log('[getRecentResults] ✅ Module query executed')
+    console.log('[getRecentResults] Found modules count:', companyModules?.length || 0)
+    
+    if (companyModules && companyModules.length > 0) {
+      console.log('[getRecentResults] Module details:')
+      companyModules.forEach((m, i) => {
+        console.log(`  ${i + 1}. "${m.title}" (ID: ${m.id}, company_id: ${m.company_id})`)
+      })
+    } else {
+      console.log('[getRecentResults] ⚠️  No modules found for company:', companyId)
+      console.log('[getRecentResults] This means:')
+      console.log('  - Either no modules exist in the database')
+      console.log('  - Or modules exist but their company_id does not match:', companyId)
+      console.log('  - Run this SQL to check: SELECT id, title, company_id FROM modules;')
+      return []
+    }
+    
+    // Get module IDs
+    const moduleIds = companyModules.map(m => m.id)
+    console.log('[getRecentResults] Module IDs array:', moduleIds)
+    
+    // Fetch results that match these modules (use admin client to bypass RLS)
+    console.log('[getRecentResults] Fetching results for', moduleIds.length, 'modules...')
+    const { data: results, error: resultsError } = await supabaseAdmin
       .from("results")
-      .select(`
-        *,
-        modules!inner (
-          title,
-          company_id
-        )
-      `)
-      .eq("modules.company_id", companyId)
+      .select("*")
+      .in("module_id", moduleIds)
       .order("submitted_at", { ascending: false })
       .limit(limit)
 
-    if (error) {
-      console.error("Error fetching recent results:", error)
+    if (resultsError) {
+      console.error("[getRecentResults] ❌ Error fetching results:", resultsError)
+      console.error("[getRecentResults] Error details:", JSON.stringify(resultsError, null, 2))
       return []
     }
+    
+    console.log('[getRecentResults] ✅ Results query executed')
+    console.log('[getRecentResults] Found results count:', results?.length || 0)
+    
+    if (!results || results.length === 0) {
+      console.log('[getRecentResults] ⚠️  No results found for these modules')
+      console.log('[getRecentResults] This means:')
+      console.log('  - No users have completed quizzes yet')
+      console.log('  - Or results exist but module_id references are broken')
+      console.log('  - Run this SQL to check: SELECT COUNT(*) FROM results WHERE module_id IN (\'' + moduleIds.join('\',\'') + '\');')
+    } else {
+      console.log('[getRecentResults] Result details:')
+      results.forEach((r, i) => {
+        console.log(`  ${i + 1}. User: ${r.user_name || r.user_id} | Score: ${r.score}% | Module: ${r.module_id}`)
+      })
+    }
 
-    // Transform the data to flatten the module information
-    const results = data?.map((item: any) => ({
+    // Create a map for quick module lookup
+    const moduleMap = new Map(companyModules.map(m => [m.id, m.title]))
+
+    // Transform the data to include module title
+    const formattedResults = results?.map((item: any) => ({
       id: item.id,
       user_id: item.user_id,
       user_name: item.user_name,
@@ -205,12 +265,15 @@ export async function getRecentResults(
       correct_answers: item.correct_answers,
       submitted_at: item.submitted_at,
       created_at: item.created_at,
-      module_title: item.modules?.title || "Unknown Module",
+      module_title: moduleMap.get(item.module_id) || "Unknown Module",
     })) || []
 
-    return results
+    console.log('[getRecentResults] ✅ Formatted results count:', formattedResults.length)
+    console.log('=== getRecentResults END ===\n')
+    return formattedResults
   } catch (error) {
-    console.error("Error fetching recent results:", error)
+    console.error("❌ [getRecentResults] Unexpected error:", error)
+    console.error("Error stack:", error instanceof Error ? error.stack : 'No stack trace')
     return []
   }
 }

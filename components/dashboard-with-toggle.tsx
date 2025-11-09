@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, memo, useEffect } from "react"
 import { Switch } from "@/components/ui/switch"
 import { ModulesSection } from "@/components/modules-section"
 import { MemberModulesViewWithFilter } from "@/components/member-modules-view-with-filter"
@@ -34,6 +34,15 @@ export function DashboardWithToggle({
   userResults
 }: DashboardWithToggleProps) {
   const [showMemberView, setShowMemberView] = useState(false)
+  const [logoUrl, setLogoUrl] = useState(companyData?.logo_url || null)
+
+  // Sync logo URL when companyData changes (e.g., after page refresh)
+  useEffect(() => {
+    console.log('[DashboardWithToggle] Company data changed:', companyData?.logo_url)
+    if (companyData?.logo_url !== logoUrl) {
+      setLogoUrl(companyData?.logo_url || null)
+    }
+  }, [companyData?.logo_url])
 
   return (
     <div className="min-h-screen bg-background">
@@ -42,14 +51,15 @@ export function DashboardWithToggle({
           {isAdmin && !showMemberView ? (
             <CompanyLogoUpload
               companyId={companyId}
-              currentLogoUrl={companyData?.logo_url || null}
+              currentLogoUrl={logoUrl}
               companyName={companyName}
+              onLogoUpdate={(newLogoUrl) => setLogoUrl(newLogoUrl)}
             />
           ) : (
             <div className="flex items-center gap-3">
-              {companyData?.logo_url ? (
+              {logoUrl ? (
                 <img
-                  src={companyData.logo_url}
+                  src={logoUrl}
                   alt={`${companyName} logo`}
                   className="w-8 h-8 rounded-lg object-cover"
                 />
@@ -92,7 +102,7 @@ export function DashboardWithToggle({
             </div>
           </main>
           <aside className="w-[400px] border-l border-border bg-background p-6">
-            <ResultsSidebar results={recentResults} modules={modules} />
+            <ResultsSidebar results={recentResults} modules={modules} companyId={companyId} />
           </aside>
         </div>
       ) : (
