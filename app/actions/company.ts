@@ -23,7 +23,8 @@ export type CompanyMembership = {
 
 export async function getCompany(companyId: string): Promise<Company | null> {
   try {
-    const { data, error } = await supabase
+    console.log("[getCompany] Fetching company data for:", companyId)
+    const { data, error } = await supabaseAdmin
       .from("companies")
       .select("*")
       .eq("id", companyId)
@@ -31,15 +32,17 @@ export async function getCompany(companyId: string): Promise<Company | null> {
 
     if (error) {
       if (error.code === 'PGRST116') {
+        console.log("[getCompany] Company not found:", companyId)
         return null
       }
-      console.error("Error fetching company:", error)
+      console.error("[getCompany] Error fetching company:", error)
       return null
     }
 
+    console.log("[getCompany] Company data retrieved:", data?.name, "Logo URL:", data?.logo_url)
     return data
   } catch (error) {
-    console.error("Error fetching company:", error)
+    console.error("[getCompany] Exception:", error)
     return null
   }
 }

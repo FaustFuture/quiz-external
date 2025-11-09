@@ -24,6 +24,27 @@ export async function uploadImageToStorage(
 
     if (error) {
       console.error("Error uploading to storage:", error)
+      
+      // Provide more specific error messages
+      if (error.message.includes('not found') || error.message.includes('Bucket not found')) {
+        return { 
+          success: false, 
+          error: `Storage bucket "${bucketName}" does not exist. Please create it in Supabase Dashboard.` 
+        }
+      }
+      if (error.message.includes('exceeded')) {
+        return { 
+          success: false, 
+          error: 'Storage quota exceeded. Please contact your administrator.' 
+        }
+      }
+      if (error.message.includes('policy')) {
+        return { 
+          success: false, 
+          error: 'Storage permission denied. Please check bucket policies.' 
+        }
+      }
+      
       return { success: false, error: error.message }
     }
 
@@ -32,10 +53,29 @@ export async function uploadImageToStorage(
       .from(bucketName)
       .getPublicUrl(fileName)
 
+    if (!urlData?.publicUrl) {
+      return { 
+        success: false, 
+        error: 'Failed to generate public URL for uploaded file' 
+      }
+    }
+
     return { success: true, url: urlData.publicUrl }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in uploadImageToStorage:", error)
-    return { success: false, error: "Failed to upload image" }
+    
+    // Handle specific error types
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      return { 
+        success: false, 
+        error: 'Cannot connect to storage server. Please check your internet connection.' 
+      }
+    }
+    
+    return { 
+      success: false, 
+      error: error.message || "Failed to upload image" 
+    }
   }
 }
 

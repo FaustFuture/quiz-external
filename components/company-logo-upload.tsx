@@ -4,6 +4,7 @@ import { useState, useRef } from "react"
 import { Camera, Upload, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { uploadCompanyLogo } from "@/app/actions/company"
+import { toast } from "sonner"
 
 interface CompanyLogoUploadProps {
   companyId: string
@@ -30,34 +31,58 @@ export function CompanyLogoUpload({
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file.')
+      toast.error('Invalid File Type', {
+        description: 'Please select an image file (PNG, JPG, GIF, etc.)'
+      })
       return
     }
 
     // Validate file size (2MB limit for logos)
     if (file.size > 2 * 1024 * 1024) {
-      alert('Logo file size must be less than 2MB.')
+      toast.error('File Too Large', {
+        description: 'Logo file size must be less than 2MB.'
+      })
       return
     }
 
     setIsUploading(true)
+    const uploadToast = toast.loading('Uploading logo...')
     
     try {
       const result = await uploadCompanyLogo(companyId, file)
       
       if (result.success && result.url) {
+        toast.success('Logo uploaded successfully!', { id: uploadToast })
         onLogoUpdate?.(result.url)
         if (result.warning) {
           console.warn(result.warning)
-          // You could show a toast notification here if you have one
+          toast.warning('Warning', { 
+            description: result.warning,
+            duration: 5000 
+          })
         }
       } else {
-        console.error("Failed to upload logo:", result.error)
-        alert("Failed to upload logo. Please try again.")
+        const errorMessage = result.error || "Failed to upload logo"
+        console.error("Failed to upload logo:", errorMessage)
+        toast.error('Upload Failed', {
+          id: uploadToast,
+          description: errorMessage,
+          action: {
+            label: 'Try Again',
+            onClick: () => fileInputRef.current?.click()
+          }
+        })
       }
     } catch (error) {
       console.error("Error uploading logo:", error)
-      alert("An error occurred while uploading the logo. Please try again.")
+      toast.error('Upload Error', {
+        id: uploadToast,
+        description: 'An unexpected error occurred. Please try again.',
+        action: {
+          label: 'Try Again',
+          onClick: () => fileInputRef.current?.click()
+        }
+      })
     } finally {
       setIsUploading(false)
       // Reset the file input
@@ -99,7 +124,9 @@ export function CompanyLogoUpload({
       
       handleFileUpload(syntheticEvent)
     } else {
-      alert('Please drop an image file.')
+      toast.error('Invalid File', {
+        description: 'Please drop an image file.'
+      })
     }
   }
 

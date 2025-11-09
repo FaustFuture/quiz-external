@@ -7,6 +7,10 @@ import { supabaseAdmin } from "@/lib/supabase";
 // PERFORMANCE OPTIMIZATION: Import optimized data fetching functions
 import { getModulesWithEligibilityCheck, getUserResultsForModules } from "@/app/actions/modules-optimized";
 
+// Force dynamic rendering to prevent caching issues
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function DashboardPage({
 	params,
 }: {

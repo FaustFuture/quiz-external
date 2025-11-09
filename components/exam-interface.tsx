@@ -397,7 +397,8 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
         scorePercentage,
         totalQuestions,
         correctAnswers,
-        answerSubmissions
+        answerSubmissions,
+        companyId // Pass companyId for cache revalidation
       )
       
       if (result.success) {
@@ -559,7 +560,10 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
           </CardContent>
           <CardFooter className="flex justify-center gap-4">
             <Button 
-              onClick={() => router.push(`/dashboard/${companyId}`)}
+              onClick={() => {
+                router.push(`/dashboard/${companyId}`)
+                router.refresh() // Force refresh to show updated results
+              }}
               className="min-w-[140px]"
             >
               Back to Dashboard
@@ -773,7 +777,10 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
             </p>
             <Button 
               className="mt-4 min-w-[140px]"
-              onClick={() => router.push(`/dashboard/${companyId}`)}
+              onClick={() => {
+                router.push(`/dashboard/${companyId}`)
+                router.refresh() // Force refresh to show updated results
+              }}
             >
               Back to Dashboard
             </Button>

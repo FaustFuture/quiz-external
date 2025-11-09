@@ -140,7 +140,8 @@ export function ResultsSidebar({ results, modules: initialModules, companyId }: 
 
   // Filter results based on selected type and module
   const filteredResults = useMemo(() => {
-    let base = results
+    // Ensure results is always an array
+    let base = results || []
     if (selectedType !== "all") {
       base = base.filter((r) => moduleIdToType[r.module_id] === selectedType)
     }
@@ -179,62 +180,89 @@ export function ResultsSidebar({ results, modules: initialModules, companyId }: 
     })
   }, [filteredResults, timeRange, selectedDate, selectedWeek, selectedMonth])
 
+  // Debug logging for results (placed after useMemo definitions to avoid initialization errors)
+  useEffect(() => {
+    console.log('[ResultsSidebar] Results received:', results?.length || 0)
+    console.log('[ResultsSidebar] Modules received:', modules?.length || 0)
+    console.log('[ResultsSidebar] Filtered results:', filteredResults?.length || 0)
+    console.log('[ResultsSidebar] Time filtered results:', timeFilteredResults?.length || 0)
+    if (results && results.length > 0) {
+      console.log('[ResultsSidebar] First result:', results[0])
+    }
+    if (timeFilteredResults.length === 0 && results.length > 0) {
+      console.warn('[ResultsSidebar] ⚠️  Results exist but time filtering removed them all!')
+      console.log('[ResultsSidebar] Current filters:', {
+        selectedModuleId,
+        selectedType,
+        timeRange,
+        selectedDate,
+        selectedWeek,
+        selectedMonth
+      })
+    }
+  }, [results, modules, filteredResults, timeFilteredResults, selectedModuleId, selectedType, timeRange, selectedDate, selectedWeek, selectedMonth])
+
   // Prepare export data shared by CSV/XLSX
   const prepareExportData = async (): Promise<{ headers: string[]; rows: any[][]; filenameBase: string }> => {
-    if (selectedModuleId === "all") {
-      const headers = [
-        "User ID",
-        "Module",
-        "Score (%)",
-        "Correct Answers",
-        "Total Questions",
-        "Submitted At",
-      ]
-      const rows = timeFilteredResults.map((result) => [
-        result.user_name || result.user_id,
-        result.module_title,
-        Math.round(result.score).toString(),
-        result.correct_answers.toString(),
-        result.total_questions.toString(),
-        new Date(result.submitted_at).toLocaleString(),
-      ])
-      const filenameBase = `quiz-results-summary-${new Date().toISOString().split("T")[0]}`
-      return { headers, rows, filenameBase }
-    } else {
-      const detailedData = await fetchDetailedResults(timeFilteredResults)
-      const headers = [
-        "User ID",
-        "Module",
-        "Score (%)",
-        "Correct Answers",
-        "Total Questions",
-        "Submitted At",
-        "Question Number",
-        "Question Text",
-        "Selected Answer",
-        "Is Correct",
-        "Time Spent (seconds)",
-        "Explanation",
-      ]
-      const rows = detailedData.flatMap((result: any) =>
-        result.answers.map((answer: any, index: number) => [
+    try {
+      if (selectedModuleId === "all") {
+        const headers = [
+          "User ID",
+          "Module",
+          "Score (%)",
+          "Correct Answers",
+          "Total Questions",
+          "Submitted At",
+        ]
+        const rows = timeFilteredResults.map((result) => [
           result.user_name || result.user_id,
           result.module_title,
           Math.round(result.score).toString(),
           result.correct_answers.toString(),
           result.total_questions.toString(),
           new Date(result.submitted_at).toLocaleString(),
-          (index + 1).toString(),
-          answer.exercises?.question || "N/A",
-          answer.alternatives?.content || "N/A",
-          answer.is_correct ? "Yes" : "No",
-          answer.time_spent_seconds.toString(),
-          answer.alternatives?.explanation || "",
         ])
-      )
-      const safeModule = modules.find((m) => m.id === selectedModuleId)?.title?.replace(/[^a-zA-Z0-9]/g, "-") || "module"
-      const filenameBase = `quiz-results-detailed-${safeModule}-${new Date().toISOString().split("T")[0]}`
-      return { headers, rows, filenameBase }
+        const filenameBase = `quiz-results-summary-${new Date().toISOString().split("T")[0]}`
+        return { headers, rows, filenameBase }
+      } else {
+        const detailedData = await fetchDetailedResults(timeFilteredResults)
+        const headers = [
+          "User ID",
+          "Module",
+          "Score (%)",
+          "Correct Answers",
+          "Total Questions",
+          "Submitted At",
+          "Question Number",
+          "Question Text",
+          "Selected Answer",
+          "Is Correct",
+          "Time Spent (seconds)",
+          "Explanation",
+        ]
+        const rows = detailedData.flatMap((result: any) =>
+          result.answers.map((answer: any, index: number) => [
+            result.user_name || result.user_id,
+            result.module_title,
+            Math.round(result.score).toString(),
+            result.correct_answers.toString(),
+            result.total_questions.toString(),
+            new Date(result.submitted_at).toLocaleString(),
+            (index + 1).toString(),
+            answer.exercises?.question || "N/A",
+            answer.alternatives?.content || "N/A",
+            answer.is_correct ? "Yes" : "No",
+            answer.time_spent_seconds?.toString() || "0",
+            answer.alternatives?.explanation || "",
+          ])
+        )
+        const safeModule = modules.find((m) => m.id === selectedModuleId)?.title?.replace(/[^a-zA-Z0-9]/g, "-") || "module"
+        const filenameBase = `quiz-results-detailed-${safeModule}-${new Date().toISOString().split("T")[0]}`
+        return { headers, rows, filenameBase }
+      }
+    } catch (error) {
+      console.error('[ResultsSidebar] Error preparing export data:', error)
+      throw new Error(`Failed to prepare export data: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -242,11 +270,15 @@ export function ResultsSidebar({ results, modules: initialModules, companyId }: 
   const generateCSV = async () => {
     setIsExporting(true)
     try {
+      console.log('[ResultsSidebar] Starting CSV export...')
       const { headers, rows, filenameBase } = await prepareExportData()
+      console.log('[ResultsSidebar] Export data prepared:', { headersCount: headers.length, rowsCount: rows.length })
+      
       const csvContent = [headers, ...rows]
-        .map((row: any[]) => row.map((field: any) => `"${field}"`).join(","))
+        .map((row: any[]) => row.map((field: any) => `"${String(field).replace(/"/g, '""')}"`).join(","))
         .join("\n")
-      const blob = new Blob([csvContent], { type: "text/csv" })
+      
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
       const url = URL.createObjectURL(blob)
       const link = document.createElement("a")
       link.href = url
@@ -255,6 +287,10 @@ export function ResultsSidebar({ results, modules: initialModules, companyId }: 
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
+      console.log('[ResultsSidebar] ✅ CSV export completed successfully')
+    } catch (error) {
+      console.error('[ResultsSidebar] ❌ CSV export error:', error)
+      alert(`Failed to generate CSV: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsExporting(false)
     }
@@ -264,15 +300,21 @@ export function ResultsSidebar({ results, modules: initialModules, companyId }: 
   const generateXLSX = async () => {
     setIsExporting(true)
     try {
+      console.log('[ResultsSidebar] Starting XLSX export...')
       const XLSX = await ensureXLSX()
+      console.log('[ResultsSidebar] XLSX library loaded successfully')
+      
       const { headers, rows, filenameBase } = await prepareExportData()
+      console.log('[ResultsSidebar] Export data prepared:', { headersCount: headers.length, rowsCount: rows.length })
+      
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
       const workbook = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(workbook, worksheet, "Results")
       XLSX.writeFile(workbook, `${filenameBase}.xlsx`)
+      console.log('[ResultsSidebar] ✅ XLSX export completed successfully')
     } catch (e) {
-      console.error("XLSX export error", e)
-      alert("Failed to generate XLSX. Please try again.")
+      console.error("[ResultsSidebar] ❌ XLSX export error:", e)
+      alert(`Failed to generate XLSX: ${e instanceof Error ? e.message : 'Unknown error'}. Please try CSV export instead.`)
     } finally {
       setIsExporting(false)
     }
@@ -282,8 +324,12 @@ export function ResultsSidebar({ results, modules: initialModules, companyId }: 
   const exportPDF = async () => {
     setIsExporting(true)
     try {
+      console.log('[ResultsSidebar] Starting PDF export...')
       const jsPDF = await ensureJsPDF()
+      console.log('[ResultsSidebar] jsPDF library loaded successfully')
+      
       const { headers, rows, filenameBase } = await prepareExportData()
+      console.log('[ResultsSidebar] Export data prepared:', { headersCount: headers.length, rowsCount: rows.length })
 
       // Create PDF and table
       const doc: any = new jsPDF({ orientation: headers.length > 6 ? "landscape" : "portrait", unit: "pt", format: "a4" })
@@ -316,9 +362,10 @@ export function ResultsSidebar({ results, modules: initialModules, companyId }: 
       // Open preview in a new tab
       window.open(url, "_blank")
       setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      console.log('[ResultsSidebar] ✅ PDF export completed successfully')
     } catch (e) {
-      console.error("PDF export error", e)
-      alert("Failed to generate PDF. Please try again.")
+      console.error("[ResultsSidebar] ❌ PDF export error:", e)
+      alert(`Failed to generate PDF: ${e instanceof Error ? e.message : 'Unknown error'}. Please try CSV export instead.`)
     } finally {
       setIsExporting(false)
     }
@@ -525,7 +572,7 @@ export function ResultsSidebar({ results, modules: initialModules, companyId }: 
                         <Download className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                  <DropdownMenuContent className="bg-muted border-border">
+                    <DropdownMenuContent align="end" className="bg-muted border-border">
                       <DropdownMenuLabel>Download as</DropdownMenuLabel>
                       <DropdownMenuItem onClick={generateCSV}>CSV (.csv)</DropdownMenuItem>
                       <DropdownMenuItem onClick={generateXLSX}>Excel (.xlsx)</DropdownMenuItem>
@@ -687,40 +734,80 @@ function getISOWeekRange(isoWeek: string): [Date, Date] {
 async function ensureXLSX(): Promise<any> {
   // Load SheetJS from CDN at runtime to avoid adding a dependency
   const globalAny = globalThis as any
-  if (globalAny.XLSX) return globalAny.XLSX
+  if (globalAny.XLSX) {
+    console.log('[ensureXLSX] XLSX already loaded')
+    return globalAny.XLSX
+  }
+  
+  console.log('[ensureXLSX] Loading XLSX from CDN...')
   await new Promise<void>((resolve, reject) => {
     const script = document.createElement("script")
     script.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
     script.async = true
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error("Failed to load XLSX library"))
+    script.onload = () => {
+      console.log('[ensureXLSX] XLSX loaded successfully')
+      resolve()
+    }
+    script.onerror = (error) => {
+      console.error('[ensureXLSX] Failed to load XLSX library:', error)
+      reject(new Error("Failed to load XLSX library from CDN. Please check your internet connection."))
+    }
     document.head.appendChild(script)
   })
-  return (globalThis as any).XLSX
+  
+  // Verify XLSX is actually available
+  if (!globalAny.XLSX) {
+    throw new Error("XLSX library loaded but not available on window object")
+  }
+  
+  return globalAny.XLSX
 }
 
 // Lightweight loader for jsPDF + autotable plugin from CDN
 async function ensureJsPDF(): Promise<any> {
   const globalAny = globalThis as any
   if (globalAny.jspdf && globalAny.jspdf.jsPDF && globalAny.jspdf_autotable) {
+    console.log('[ensureJsPDF] jsPDF already loaded')
     return globalAny.jspdf.jsPDF
   }
+  
+  console.log('[ensureJsPDF] Loading jsPDF from CDN...')
   await new Promise<void>((resolve, reject) => {
     const script = document.createElement("script")
     script.src = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"
     script.async = true
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error("Failed to load jsPDF"))
+    script.onload = () => {
+      console.log('[ensureJsPDF] jsPDF core loaded')
+      resolve()
+    }
+    script.onerror = (error) => {
+      console.error('[ensureJsPDF] Failed to load jsPDF:', error)
+      reject(new Error("Failed to load jsPDF library from CDN. Please check your internet connection."))
+    }
     document.head.appendChild(script)
   })
+  
+  console.log('[ensureJsPDF] Loading jsPDF AutoTable plugin...')
   await new Promise<void>((resolve, reject) => {
     const script = document.createElement("script")
     script.src = "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"
     script.async = true
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error("Failed to load jsPDF AutoTable"))
+    script.onload = () => {
+      console.log('[ensureJsPDF] jsPDF AutoTable loaded')
+      resolve()
+    }
+    script.onerror = (error) => {
+      console.error('[ensureJsPDF] Failed to load jsPDF AutoTable:', error)
+      reject(new Error("Failed to load jsPDF AutoTable plugin from CDN. Please check your internet connection."))
+    }
     document.head.appendChild(script)
   })
-  return (globalThis as any).jspdf.jsPDF
+  
+  // Verify jsPDF is actually available
+  if (!globalAny.jspdf || !globalAny.jspdf.jsPDF) {
+    throw new Error("jsPDF library loaded but not available on window object")
+  }
+  
+  return globalAny.jspdf.jsPDF
 }
 
