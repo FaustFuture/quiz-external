@@ -17,24 +17,24 @@ export default async function DashboardPage({
 	params: Promise<{ companyId: string }>;
 }) {
 	const { companyId } = await params;
-	
+
 	console.log("[Dashboard] Company ID:", companyId);
-	
+
 	// Ensure the user is logged in with Supabase
 	const user = await requireAuth();
 	const userId = user.id;
-	
+
 	console.log("[Dashboard] Authenticated User ID:", userId);
 	console.log("[Dashboard] User Email:", user.email);
 
 	// Fetch company data from database
 	let companyData = null;
 	let companyName = companyId; // Default fallback
-	
+
 	try {
 		companyData = await getCompany(companyId);
 		console.log("[Dashboard] Company data:", companyData);
-		
+
 		if (!companyData) {
 			// Create company record if it doesn't exist
 			console.log("[Dashboard] Creating company record for:", companyId);
@@ -44,7 +44,7 @@ export default async function DashboardPage({
 				companyData = createResult.data;
 			}
 		}
-		
+
 		if (companyData?.name) {
 			companyName = companyData.name;
 		}
@@ -57,10 +57,10 @@ export default async function DashboardPage({
 	console.log("[Dashboard] Is admin:", isAdmin);
 
 	// Fetch recent results and modules for admin sidebar
-	const [recentResults, modules] = isAdmin 
+	const [recentResults, modules] = isAdmin
 		? await Promise.all([
 			getRecentResults(companyId, 10),
-    getModules(companyId)
+			getModules(companyId)
 		])
 		: [[], []];
 
@@ -69,17 +69,17 @@ export default async function DashboardPage({
 	// separately for each module (which could result in hundreds of database queries)
 	let memberModules = modules;
 	let userResults = {};
-	
+
 	if (!isAdmin) {
 		// Fetch eligible modules with a single optimized query instead of N+1 queries
 		memberModules = await getModulesWithEligibilityCheck(companyId);
-		
+
 		// Batch fetch all user results in a single query instead of one per module
 		const moduleIds = memberModules.map(m => m.id);
 		userResults = await getUserResultsForModules(userId, moduleIds);
 	}
 
-return (
+	return (
 		<DashboardWithToggle
 			isAdmin={isAdmin}
 			companyId={companyId}
@@ -88,7 +88,7 @@ return (
 			companyData={companyData}
 			recentResults={recentResults}
 			modules={modules}
-      memberModules={memberModules}
+			memberModules={memberModules}
 			userResults={userResults}
 		/>
 	);
@@ -97,21 +97,21 @@ return (
 async function checkUserIsAdmin(userId: string, companyId: string): Promise<boolean> {
 	try {
 		console.log("[checkUserIsAdmin] Checking for user:", userId, "company:", companyId);
-		
+
 		const { data, error } = await supabaseAdmin
 			.from('companies_users')
 			.select('role')
 			.eq('company_id', companyId)
 			.eq('user_id', userId)
 			.single();
-		
+
 		console.log("[checkUserIsAdmin] Query result:", { data, error });
-		
+
 		if (error || !data) {
 			console.log("[checkUserIsAdmin] No membership found or error, user is not admin");
 			return false;
 		}
-		
+
 		const isAdmin = data.role === 'admin';
 		console.log("[checkUserIsAdmin] Role:", data.role, "Is admin:", isAdmin);
 		return isAdmin;
