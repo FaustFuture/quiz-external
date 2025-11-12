@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { signupSchema, type SignupFormData } from '@/lib/validations/auth'
 import Link from 'next/link'
 
-export default function SignupPage() {
+function SignupForm() {
 	const [loading, setLoading] = useState(false)
 	const [message, setMessage] = useState<{ type: 'error' | 'success', text: string } | null>(null)
 	const [currentUser, setCurrentUser] = useState<any>(null)
@@ -243,3 +243,18 @@ export default function SignupPage() {
 	)
 }
 
+export default function SignupPage() {
+	return (
+		<Suspense fallback={
+			<div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+				<Card className="w-full max-w-md">
+					<CardHeader className="space-y-1">
+						<CardTitle className="text-2xl font-bold">Loading...</CardTitle>
+					</CardHeader>
+				</Card>
+			</div>
+		}>
+			<SignupForm />
+		</Suspense>
+	)
+}
