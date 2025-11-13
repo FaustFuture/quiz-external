@@ -22,9 +22,16 @@ export async function upsertUsersFromSupabase(userIds: string[]) {
 		try {
 			const { data: user } = await supabaseAdmin.auth.admin.getUserById(id)
 			if (user?.user) {
+				// Build name from first_name and last_name, or fallback to name or email
+				const firstName = user.user.user_metadata?.first_name || ""
+				const lastName = user.user.user_metadata?.last_name || ""
+				const fullName = firstName && lastName
+					? `${firstName} ${lastName}`.trim()
+					: firstName || lastName || user.user.user_metadata?.name || user.user.email?.split('@')[0] || null
+
 				users.push({
 					auth_user_id: id,
-					name: user.user.user_metadata?.name || user.user.email?.split('@')[0] || null,
+					name: fullName,
 					email: user.user.email || null,
 					avatar_url: user.user.user_metadata?.avatar_url || null,
 				})
@@ -298,6 +305,229 @@ export async function checkEmailExists(email: string) {
 		// On error, return false to allow signup attempt
 		// Supabase will handle duplicate prevention
 		return { success: false, exists: false }
+	}
+}
+
+/**
+ * Update user profile (email, first name, last name)
+ * For anonymous users, this upgrades their account by adding email
+ */
+export async function updateUserProfile(
+	email: string,
+	firstName?: string,
+	lastName?: string
+): Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }> {
+	try {
+		const { createServerSupabaseClient } = await import("@/lib/supabase-server")
+		const supabase = await createServerSupabaseClient()
+
+		const { data: { user } } = await supabase.auth.getUser()
+		if (!user) {
+			return { success: false, error: "User not authenticated" }
+		}
+
+		// Check if email is being changed and if it already exists
+		if (email && email !== user.email) {
+			const emailCheck = await checkEmailExists(email)
+			if (emailCheck.success && emailCheck.exists) {
+				return { success: false, error: "This email address is already registered" }
+			}
+		}
+
+		// Prepare user metadata
+		const metadata: Record<string, any> = { ...user.user_metadata }
+		if (firstName !== undefined) {
+			metadata.first_name = firstName || null
+		}
+		if (lastName !== undefined) {
+			metadata.last_name = lastName || null
+		}
+
+		// Update user
+		const updateData: any = {
+			data: metadata
+		}
+
+		// If email is provided and different, add it (will require confirmation)
+		if (email && email !== user.email) {
+			updateData.email = email
+		}
+
+		const { error } = await supabase.auth.updateUser(updateData)
+
+		if (error) {
+			console.error("[updateUserProfile] Error:", error)
+			return { success: false, error: error.message }
+		}
+
+		// Update cached user in database - refresh user data first
+		// Get fresh user data after update to ensure we have latest metadata
+		const { data: { user: updatedUser } } = await supabase.auth.getUser()
+		if (updatedUser) {
+			await upsertUsersFromSupabase([updatedUser.id])
+		} else {
+			// Fallback to original user ID if refresh fails
+			await upsertUsersFromSupabase([user.id])
+		}
+
+		// If email was changed, it requires confirmation
+		const requiresEmailConfirmation = email && email !== user.email
+
+		return {
+			success: true,
+			requiresEmailConfirmation
+		}
+	} catch (error: any) {
+		console.error("[updateUserProfile] Exception:", error)
+		return { success: false, error: error.message || "Failed to update profile" }
+	}
+}
+
+/**
+ * Upgrade anonymous account by adding email and password
+ */
+export async function upgradeAnonymousAccount(
+	email: string,
+	password: string,
+	firstName?: string,
+	lastName?: string
+): Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }> {
+	try {
+		const { createServerSupabaseClient } = await import("@/lib/supabase-server")
+		const supabase = await createServerSupabaseClient()
+
+		const { data: { user } } = await supabase.auth.getUser()
+		if (!user) {
+			return { success: false, error: "User not authenticated" }
+		}
+
+		// Check if user is actually anonymous
+		if (user.email && !user.is_anonymous) {
+			return { success: false, error: "Account is not anonymous" }
+		}
+
+		// Check if email already exists
+		const emailCheck = await checkEmailExists(email)
+		if (emailCheck.success && emailCheck.exists) {
+			return { success: false, error: "This email address is already registered" }
+		}
+
+		// Prepare user metadata
+		const metadata: Record<string, any> = { ...user.user_metadata }
+		if (firstName) metadata.first_name = firstName
+		if (lastName) metadata.last_name = lastName
+
+		// Update user with email (this will send confirmation email)
+		const { error: updateError } = await supabase.auth.updateUser({
+			email,
+			data: metadata
+		})
+
+		if (updateError) {
+			console.error("[upgradeAnonymousAccount] Error updating email:", updateError)
+			return { success: false, error: updateError.message }
+		}
+
+		// Note: Password can only be set after email is confirmed
+		// We'll need to handle password setting separately after email confirmation
+		// For now, return that email confirmation is required
+
+		// Update cached user in database - refresh user data first
+		// Get fresh user data after update to ensure we have latest metadata
+		const { data: { user: updatedUser } } = await supabase.auth.getUser()
+		if (updatedUser) {
+			await upsertUsersFromSupabase([updatedUser.id])
+		} else {
+			// Fallback to original user ID if refresh fails
+			await upsertUsersFromSupabase([user.id])
+		}
+
+		return {
+			success: true,
+			requiresEmailConfirmation: true
+		}
+	} catch (error: any) {
+		console.error("[upgradeAnonymousAccount] Exception:", error)
+		return { success: false, error: error.message || "Failed to upgrade account" }
+	}
+}
+
+/**
+ * Update user password
+ */
+export async function updateUserPassword(
+	newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+	try {
+		const { createServerSupabaseClient } = await import("@/lib/supabase-server")
+		const supabase = await createServerSupabaseClient()
+
+		const { data: { user } } = await supabase.auth.getUser()
+		if (!user) {
+			return { success: false, error: "User not authenticated" }
+		}
+
+		const { error } = await supabase.auth.updateUser({
+			password: newPassword
+		})
+
+		if (error) {
+			console.error("[updateUserPassword] Error:", error)
+			return { success: false, error: error.message }
+		}
+
+		// Update cached user in database
+		await upsertUsersFromSupabase([user.id])
+
+		return { success: true }
+	} catch (error: any) {
+		console.error("[updateUserPassword] Exception:", error)
+		return { success: false, error: error.message || "Failed to update password" }
+	}
+}
+
+/**
+ * Set password for anonymous user after email confirmation
+ */
+export async function setPasswordForUpgradedAccount(
+	password: string
+): Promise<{ success: boolean; error?: string }> {
+	try {
+		const { createServerSupabaseClient } = await import("@/lib/supabase-server")
+		const supabase = await createServerSupabaseClient()
+
+		const { data: { user } } = await supabase.auth.getUser()
+		if (!user) {
+			return { success: false, error: "User not authenticated" }
+		}
+
+		// Check if email is confirmed
+		if (!user.email_confirmed_at) {
+			return { success: false, error: "Please confirm your email address first" }
+		}
+
+		const { error } = await supabase.auth.updateUser({
+			password
+		})
+
+		if (error) {
+			console.error("[setPasswordForUpgradedAccount] Error:", error)
+			return { success: false, error: error.message }
+		}
+
+		// Update cached user in database - refresh user data first
+		const { data: { user: updatedUser } } = await supabase.auth.getUser()
+		if (updatedUser) {
+			await upsertUsersFromSupabase([updatedUser.id])
+		} else {
+			// Fallback to original user ID if refresh fails
+			await upsertUsersFromSupabase([user.id])
+		}
+
+		return { success: true }
+	} catch (error: any) {
+		console.error("[setPasswordForUpgradedAccount] Exception:", error)
+		return { success: false, error: error.message || "Failed to set password" }
 	}
 }
 
