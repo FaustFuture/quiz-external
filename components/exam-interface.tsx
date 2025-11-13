@@ -55,7 +55,13 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
 	const [isLoadingStats, setIsLoadingStats] = useState(true)
 	const [hasRetakeAccess, setHasRetakeAccess] = useState<boolean | null>(null)
 	const questionStartTime = useRef<number>(Date.now())
+	const answersRef = useRef<AnswerRecord[]>([])
 	const searchParams = useSearchParams()
+
+	// Keep ref in sync with answers state
+	useEffect(() => {
+		answersRef.current = answers
+	}, [answers])
 
 	const currentQuestion = questions[currentQuestionIndex]
 	// BUGFIX: Handle case when currentQuestion is undefined (empty questions array)
@@ -107,15 +113,11 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
 			// Check if this is a guest user by looking up in guest_accounts table
 			// IMPORTANT: Guests do NOT have auth accounts - they only exist in guest_accounts table
 			try {
-				const { supabaseAdmin } = await import("@/lib/supabase")
-				const { data: guestAccount, error: guestError } = await supabaseAdmin
-					.from("guest_accounts")
-					.select("guest_id")
-					.eq("guest_id", userId)
-					.maybeSingle()
+				const { isGuestAccount } = await import("@/app/actions/guests")
+				const isGuest = await isGuestAccount(userId)
 
 				// Guest users can always retake (they don't have auth accounts)
-				if (guestAccount && !guestError) {
+				if (isGuest) {
 					setHasRetakeAccess(true)
 					return
 				}
@@ -337,20 +339,23 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
 
 	// Check if this question has already been answered and reset timer
 	useEffect(() => {
-		// BUGFIX: Handle case when currentQuestion is undefined
-		if (!currentQuestion) return
+		// Compute current question inside effect to ensure fresh reference
+		const question = questions[currentQuestionIndex]
+		if (!question) return
 
-		const existingAnswer = answers.find(a => a.questionId === currentQuestion.id)
+		// Always reset state first, then check if there's an existing answer
+		// This ensures clean state for each question
+		setSelectedAlternativeId(null)
+		setHasAnswered(false)
+		questionStartTime.current = Date.now()
+
+		// Check if this question was already answered using the ref for latest state
+		const existingAnswer = answersRef.current.find(a => a.questionId === question.id)
 		if (existingAnswer) {
 			setSelectedAlternativeId(existingAnswer.selectedAlternativeId)
 			setHasAnswered(true)
-		} else {
-			setSelectedAlternativeId(null)
-			setHasAnswered(false)
-			// Reset timer for new question
-			questionStartTime.current = Date.now()
 		}
-	}, [currentQuestionIndex, answers, currentQuestion?.id])
+	}, [currentQuestionIndex, questions])
 
 	// Update image size when question changes
 	useEffect(() => {
@@ -361,31 +366,50 @@ export function ExamInterface({ questions, moduleTitle, companyId, moduleId, use
 	}, [currentQuestion?.image_display_size])
 
 	const handleAlternativeSelect = (alternativeId: string) => {
+
+		console.log("handleAlternativeSelect", alternativeId)
+
+		console.log(moduleType === 'exam', hasRetakeAccess)
 		// Block answering if exam retake not granted
-		if (moduleType === 'exam' && hasRetakeAccess === false) return
-		// Can only select if not yet answered
-		if (hasAnswered) return
+		// if (moduleType === 'exam' && hasRetakeAccess === false) return
 
-		setSelectedAlternativeId(alternativeId)
+		// Get current question to ensure we're using the latest reference
+		const question = questions[currentQuestionIndex]
+		if (!question) return
 
-		// Find the selected alternative to check if it's correct
-		const selectedAlternative = currentQuestion.alternatives.find(a => a.id === alternativeId)
-		if (!selectedAlternative) return
+		// Check if current question already has an answer using functional update
+		// This ensures we're always checking the latest answers state, not a stale closure
+		setAnswers(prev => {
+			// Check if this question already has an answer
+			const existingAnswer = prev.find(a => a.questionId === question.id)
+			if (existingAnswer) {
+				// Already answered, don't proceed
+				return prev
+			}
 
-		// Calculate time spent on this question
-		const timeSpent = Math.floor((Date.now() - questionStartTime.current) / 1000)
+			// Find the selected alternative to check if it's correct
+			const selectedAlternative = question.alternatives.find(a => a.id === alternativeId)
+			if (!selectedAlternative) {
+				return prev
+			}
 
-		// Mark as answered and save the answer
-		setHasAnswered(true)
+			// Calculate time spent on this question
+			const timeSpent = Math.floor((Date.now() - questionStartTime.current) / 1000)
 
-		const newAnswer: AnswerRecord = {
-			questionId: currentQuestion.id,
-			selectedAlternativeId: alternativeId,
-			isCorrect: selectedAlternative.is_correct,
-			timeSpentSeconds: timeSpent
-		}
+			const newAnswer: AnswerRecord = {
+				questionId: question.id,
+				selectedAlternativeId: alternativeId,
+				isCorrect: selectedAlternative.is_correct,
+				timeSpentSeconds: timeSpent
+			}
 
-		setAnswers(prev => [...prev, newAnswer])
+			// Update state atomically
+			setSelectedAlternativeId(alternativeId)
+			setHasAnswered(true)
+
+			// Return updated answers array
+			return [...prev, newAnswer]
+		})
 	}
 
 	const handleNext = async () => {

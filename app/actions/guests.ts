@@ -58,3 +58,21 @@ export async function getGuestAccount(guestId: string): Promise<GuestAccount | n
 	}
 }
 
+/**
+ * Check if a user is a guest account
+ */
+export async function isGuestAccount(userId: string): Promise<boolean> {
+	try {
+		const { data, error } = await supabaseAdmin
+			.from("guest_accounts")
+			.select("guest_id")
+			.eq("guest_id", userId)
+			.maybeSingle()
+
+		return !!data && !error
+	} catch (error) {
+		console.error("Error checking guest account:", error)
+		return false
+	}
+}
+
