@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
 	console.log("[Proxy] User:", user?.id);
 
 	// Public routes that don't require authentication
-	const publicRoutes = ['/login', '/signup', '/auth', '/quiz']
+	const publicRoutes = ['/login', '/signup', '/auth', '/quiz', '/invite']
 	const isPublicRoute = publicRoutes.some(route => request.nextUrl.pathname.startsWith(route))
 
 	console.log("[Proxy] Is public route:", isPublicRoute);
